@@ -1,0 +1,351 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: zellij-0.5.0b
+Source: <url://example.com>
+#
+# Please double check copyright with the licensecheck(1) command.
+
+Files:     .github/ISSUE_TEMPLATE/blank_issue.md
+           .github/ISSUE_TEMPLATE/bug_report.md
+           .github/ISSUE_TEMPLATE/config.yml
+           .github/workflows/release.yml
+           .github/workflows/rust.yml
+           .gitignore
+           CODE_OF_CONDUCT.md
+           CONTRIBUTING.md
+           Cargo.lock
+           Cargo.toml
+           GOVERNANCE.md
+           Makefile.toml
+           assets/completions/_zellij
+           assets/completions/zellij.bash
+           assets/completions/zellij.fish
+           assets/layouts/default.yaml
+           assets/layouts/strider.yaml
+           assets/logo.png
+           assets/plugins/status-bar.wasm
+           assets/plugins/strider.wasm
+           assets/plugins/tab-bar.wasm
+           build.rs
+           default-plugins/status-bar/.cargo/config.toml
+           default-plugins/status-bar/Cargo.toml
+           default-plugins/status-bar/src/first_line.rs
+           default-plugins/status-bar/src/main.rs
+           default-plugins/status-bar/src/second_line.rs
+           default-plugins/strider/.cargo/config.toml
+           default-plugins/strider/Cargo.toml
+           default-plugins/strider/src/main.rs
+           default-plugins/strider/src/state.rs
+           default-plugins/tab-bar/.cargo/config.toml
+           default-plugins/tab-bar/Cargo.toml
+           default-plugins/tab-bar/src/line.rs
+           default-plugins/tab-bar/src/main.rs
+           default-plugins/tab-bar/src/tab.rs
+           docs/ARCHITECTURE.md
+           docs/TERMINOLOGY.md
+           example/README.md
+           example/config.yaml
+           example/default.yaml
+           rust-toolchain
+           src/cli.rs
+           src/client/boundaries.rs
+           src/client/layout.rs
+           src/client/mod.rs
+           src/client/pane_resizer.rs
+           src/client/panes/grid.rs
+           src/client/panes/mod.rs
+           src/client/panes/plugin_pane.rs
+           src/client/panes/terminal_character.rs
+           src/client/panes/terminal_pane.rs
+           src/client/tab.rs
+           src/common/command_is_executing.rs
+           src/common/errors.rs
+           src/common/input/actions.rs
+           src/common/input/config.rs
+           src/common/input/handler.rs
+           src/common/input/keybinds.rs
+           src/common/input/mod.rs
+           src/common/input/unit/keybinds_test.rs
+           src/common/install.rs
+           src/common/ipc.rs
+           src/common/mod.rs
+           src/common/os_input_output.rs
+           src/common/pty_bus.rs
+           src/common/screen.rs
+           src/common/utils/consts.rs
+           src/common/utils/logging.rs
+           src/common/utils/mod.rs
+           src/common/utils/shared.rs
+           src/common/wasm_vm.rs
+           src/main.rs
+           src/server/mod.rs
+           src/tests/fakes.rs
+           src/tests/fixtures/bash_cursor_linewrap
+           src/tests/fixtures/clear_scroll_region
+           src/tests/fixtures/exa_plus_omf_theme
+           src/tests/fixtures/fish_and_bandwhich
+           src/tests/fixtures/fish_paste_multiline
+           src/tests/fixtures/fish_select_tab_completion_options
+           src/tests/fixtures/fish_tab_completion_options
+           src/tests/fixtures/git_diff_scrollup
+           src/tests/fixtures/htop
+           src/tests/fixtures/htop_right_scrolling
+           src/tests/fixtures/htop_scrolling
+           src/tests/fixtures/layouts/parts-total-less-than-100-percent.yaml
+           src/tests/fixtures/layouts/parts-total-more-than-100-percent.yaml
+           src/tests/fixtures/layouts/three-panes-with-nesting.yaml
+           src/tests/fixtures/nvim_insert
+           src/tests/fixtures/tab_characters
+           src/tests/fixtures/top_and_quit
+           src/tests/fixtures/vim_ctrl_d
+           src/tests/fixtures/vim_ctrl_u
+           src/tests/fixtures/vim_overwrite
+           src/tests/fixtures/vim_scroll_region_down
+           src/tests/integration/basic.rs
+           src/tests/integration/close_pane.rs
+           src/tests/integration/compatibility.rs
+           src/tests/integration/layouts.rs
+           src/tests/integration/mod.rs
+           src/tests/integration/move_focus_down.rs
+           src/tests/integration/move_focus_left.rs
+           src/tests/integration/move_focus_right.rs
+           src/tests/integration/move_focus_up.rs
+           src/tests/integration/resize_down.rs
+           src/tests/integration/resize_left.rs
+           src/tests/integration/resize_right.rs
+           src/tests/integration/resize_up.rs
+           src/tests/integration/snapshots/zellij__tests__integration__basic__cannot_split_largest_terminal_when_there_is_no_room.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__cannot_split_terminals_horizontally_when_active_terminal_is_too_small.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__cannot_split_terminals_vertically_when_active_terminal_is_too_small.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__max_panes.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__scrolling_down_inside_a_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__scrolling_up_inside_a_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__split_largest_terminal.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__split_terminals_horizontally.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__split_terminals_vertically.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__starts_with_one_terminal.snap
+           src/tests/integration/snapshots/zellij__tests__integration__basic__toggle_focused_pane_fullscreen.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_another_pane_above_it.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_another_pane_below_it.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_another_pane_to_the_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_another_pane_to_the_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_above_it.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_above_it_away_from_screen_edges.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_below_it.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_below_it_away_from_screen_edges.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_to_the_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_to_the_left_away_from_screen_edges.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_to_the_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__close_pane_with_multiple_panes_to_the_right_away_from_screen_edges.snap
+           src/tests/integration/snapshots/zellij__tests__integration__close_pane__closing_last_pane_exits_app.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__bash_cursor_linewrap.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__clear_scroll_region.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__display_tab_characters_properly.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__emacs_longbuf.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__exa_plus_omf_theme.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__fish_paste_multiline.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__fish_select_tab_completion_options.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__fish_tab_completion_options.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__git_diff_scrollup.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__git_log.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__htop.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__htop_right_scrolling.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__htop_scrolling.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__neovim_insert_mode.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__run_bandwhich_from_fish_shell.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__top_and_quit.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__vim_ctrl_d.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__vim_ctrl_u.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__vim_overwrite.snap
+           src/tests/integration/snapshots/zellij__tests__integration__compatibility__vim_scroll_region_down.snap
+           src/tests/integration/snapshots/zellij__tests__integration__layouts__accepts_basic_layout-2.snap
+           src/tests/integration/snapshots/zellij__tests__integration__layouts__accepts_basic_layout-3.snap
+           src/tests/integration/snapshots/zellij__tests__integration__layouts__accepts_basic_layout.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_down__move_focus_down.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_down__move_focus_down_to_the_largest_overlap.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_left__move_focus_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_left__move_focus_left_to_the_largest_overlap.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_right__move_focus_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_right__move_focus_right_to_the_largest_overlap.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_up__move_focus_up.snap
+           src/tests/integration/snapshots/zellij__tests__integration__move_focus_up__move_focus_up_to_the_largest_overlap.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__cannot_resize_down_when_pane_below_is_at_minimum_height.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_multiple_panes_above.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_pane_above.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_pane_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_above_aligned_left_and_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_above_aligned_left_and_right_with_panes_to_the_left_and_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_above_aligned_left_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_above_aligned_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_above_and_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_below_aligned_left_and_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_below_aligned_left_and_right_with_to_the_left_and_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_below_aligned_left_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_down__resize_down_with_panes_below_aligned_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__cannot_resize_left_when_pane_to_the_left_is_at_minimum_width.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_multiple_panes_to_the_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_pane_to_the_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_pane_to_the_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_left_aligned_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_left_aligned_top_and_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_left_aligned_top_and_bottom_with_panes_above_and_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_left_aligned_top_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_left_and_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_right_aligned_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_right_aligned_top_and_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_right_aligned_top_and_bottom_with_panes_above_and_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_left__resize_left_with_panes_to_the_right_aligned_top_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__cannot_resize_right_when_pane_to_the_left_is_at_minimum_width.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_multiple_panes_to_the_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_pane_to_the_left.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_pane_to_the_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_left_aligned_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_left_aligned_top_and_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_left_aligned_top_and_bottom_with_panes_above_and_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_left_aligned_top_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_left_and_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_right_aligned_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_right_aligned_top_and_bottom_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_right_aligned_top_and_bottom_with_panes_above_and_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_right__resize_right_with_panes_to_the_right_aligned_top_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__cannot_resize_up_when_pane_above_is_at_minimum_height.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_multiple_panes_above.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_pane_above.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_pane_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_above_aligned_left_and_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_above_aligned_left_and_right_with_panes_to_the_left_and_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_above_aligned_left_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_above_aligned_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_above_and_below.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_below_aligned_left_and_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_below_aligned_left_and_right_with_to_the_left_and_right.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_below_aligned_left_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__resize_up__resize_up_with_panes_below_aligned_right_with_current_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__close_last_pane_in_a_tab.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__close_tab.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__close_the_middle_tab.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__close_the_tab_that_has_a_pane_in_fullscreen.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__closing_last_tab_exits_the_app.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__open_new_tab.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__switch_to_next_tab.snap
+           src/tests/integration/snapshots/zellij__tests__integration__tabs__switch_to_prev_tab.snap
+           src/tests/integration/snapshots/zellij__tests__integration__terminal_window_resize__window_height_increase_with_one_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__terminal_window_resize__window_width_and_height_decrease_with_one_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__terminal_window_resize__window_width_decrease_with_one_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__terminal_window_resize__window_width_increase_with_one_pane.snap
+           src/tests/integration/snapshots/zellij__tests__integration__toggle_fullscreen__adding_new_terminal_in_fullscreen.snap
+           src/tests/integration/snapshots/zellij__tests__integration__toggle_fullscreen__move_focus_is_disabled_in_fullscreen.snap
+           src/tests/integration/tabs.rs
+           src/tests/integration/terminal_window_resize.rs
+           src/tests/integration/toggle_fullscreen.rs
+           src/tests/mod.rs
+           src/tests/possible_tty_inputs.rs
+           src/tests/tty_inputs.rs
+           src/tests/utils.rs
+           zellij-tile/Cargo.toml
+           zellij-tile/src/data.rs
+           zellij-tile/src/lib.rs
+           zellij-tile/src/prelude.rs
+           zellij-tile/src/shim.rs
+Copyright: __NO_COPYRIGHT_NOR_LICENSE__
+License:   __NO_COPYRIGHT_NOR_LICENSE__
+
+Files:     LICENSE.md
+Copyright: 2020 Zellij contributors
+License:   Expat
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+
+Files:     src/tests/fixtures/emacs_longbuf_tutorial
+Copyright: 2019 Free Software Foundation, Inc.
+License:   __UNKNOWN__
+ Emacs is Free Software--Free as in Freedom--so you can redistribute copies[K
+ of Emacs and modify it; type C-h C-c to see [4m[38;5;62mthe conditions[0m[39;49m.[K
+ Type C-h C-o for information on [4m[38;5;62mgetting the latest version[0m[39;49m.[K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [K
+ [30m[48;5;250m-UUU:%%--F1  [39;49m[1m[30m[48;5;250m*GNU Emacs* [0m[39;49m[30m[48;5;250m   All L1     (Fundamental) ----------------------------------------------------------------------------------------------------------------------------------------------------------------[39;49m
+
+Files:     src/tests/fixtures/git_log
+Copyright: __NO_COPYRIGHT__ in: src/tests/fixtures/git_log
+License:   __UNKNOWN__
+ * wip: tabs, just outlining stuff, for now it is a mess[m
+ [m
+ * wip: tabs, just outlining stuff, for now it is a mess[m
+ [m
+ * wip: formatting[m
+ [m
+ * wip: some moving around[m
+ [m
+ * wip: not sure why those things are not imported[m
+ [m
+ * wip: cleaning up a bit[m
+ [m
+
+#----------------------------------------------------------------------------
+# xml and html files (skipped):
+#         README.md
+
+#----------------------------------------------------------------------------
+# huge files   (skipped):
+#         assets/demo.gif
+
+#----------------------------------------------------------------------------
+# Files marked as NO_LICENSE_TEXT_FOUND may be covered by the following
+# license/copyright files.
+
+#----------------------------------------------------------------------------
+# License file: LICENSE.md
+ MIT License
+ .
+ Copyright (c) 2020 Zellij contributors
+ .
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.

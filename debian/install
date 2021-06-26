@@ -1,0 +1,7 @@
+target/release/zellij usr/bin
+
+assets/completions/*	usr/share/bash-completion/completions
+
+zellij.svg	    usr/share/icons/hicolor/scalable/apps/
+
+debian/dev.zellij.zellij.metainfo.xml /usr/share/metainfo

@@ -1,0 +1,17 @@
+Source: zellij
+Section: tools
+Priority: optional
+Maintainer: CyberVitexus <info@vitexsoftware.cz>
+Build-Depends: debhelper (>=11~),rustc (>=1.40),cargo,dh-cargo, inkscape
+Standards-Version: 4.1.4
+Homepage: https://zellij.dev/
+
+Package: zellij
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: A terminal workspace with batteries included
+ Zellij is a terminal workspace. It has the base functionality 
+ of a terminal multiplexer (similar to tmux or screen) but 
+ includes many built-in features that would allow users to extend 
+ it and create their own personalized environment.

@@ -1,0 +1,26 @@
+#!/usr/bin/make -f
+# You must remove unused comment lines for the released package.
+export DH_VERBOSE = 1
+#export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+#export DEB_CFLAGS_MAINT_APPEND  = -Wall -pedantic
+#export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
+
+#export PATH = "~/.cargo/bin/:${PATH}"
+
+%:
+	dh $@
+
+override_dh_build:
+	~/.cargo/bin/cargo -v build
+	dh_build
+
+override_dh_prep:
+	~/.cargo/bin/cargo  -v check
+	dh_prep
+
+
+
+override_dh_install:
+	dh_install
+	~/.cargo/bin/cargo  -v install --path .
+	debian/mkico.sh
