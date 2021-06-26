@@ -11,16 +11,15 @@ export DH_VERBOSE = 1
 	dh $@
 
 override_dh_build:
-	~/.cargo/bin/cargo -v build
+	cargo -v build
 	dh_build
 
 override_dh_prep:
-	~/.cargo/bin/cargo  -v check
+	cargo  -v check
 	dh_prep
-
 
 
 override_dh_install:
 	dh_install
-	~/.cargo/bin/cargo  -v install --path .
+	cargo  -v install --path .
 	debian/mkico.sh
