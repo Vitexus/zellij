@@ -1,297 +1,192 @@
-//! Mapping of inputs to sequences of actions.
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::actions::Action;
-use super::config;
+use crate::data::{BareKey, InputMode, KeyWithModifier, KeybindsVec};
 
 use serde::{Deserialize, Serialize};
-use strum::IntoEnumIterator;
-use zellij_tile::data::*;
+use std::fmt;
 
 /// Used in the config struct
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct Keybinds(HashMap<InputMode, ModeKeybinds>);
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct ModeKeybinds(HashMap<Key, Vec<Action>>);
+#[derive(Clone, PartialEq, Deserialize, Serialize, Default)]
+pub struct Keybinds(pub HashMap<InputMode, HashMap<KeyWithModifier, Vec<Action>>>);
 
-/// Intermediate struct used for deserialisation
-/// Used in the config file.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct KeybindsFromYaml {
-    #[serde(flatten)]
-    keybinds: HashMap<InputMode, Vec<KeyActionUnbind>>,
-    #[serde(default)]
-    unbind: Unbind,
-}
-
-/// Intermediate enum used for deserialisation
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(untagged)]
-enum KeyActionUnbind {
-    KeyAction(KeyActionFromYaml),
-    Unbind(UnbindFromYaml),
-}
-
-/// Intermediate struct used for deserialisation
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-struct KeyActionUnbindFromYaml {
-    keybinds: Vec<KeyActionFromYaml>,
-    unbind: Unbind,
-}
-
-/// Intermediate struct used for deserialisation
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct KeyActionFromYaml {
-    action: Vec<Action>,
-    key: Vec<Key>,
-}
-
-/// Intermediate struct used for deserialisation
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-struct UnbindFromYaml {
-    unbind: Unbind,
-}
-
-/// List of keys, for which to disable their respective default actions
-/// `All` is a catch all, and will disable the default actions for all keys.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
-#[serde(untagged)]
-enum Unbind {
-    // This is the correct order, don't rearrange!
-    // Suspected Bug in the untagged macro.
-    // 1. Keys
-    Keys(Vec<Key>),
-    // 2. All
-    All(bool),
-}
-
-impl Default for Keybinds {
-    // Use once per codepath
-    // TODO investigate why
-    fn default() -> Keybinds {
-        Self::from_default_assets()
+impl fmt::Debug for Keybinds {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut stable_sorted = BTreeMap::new();
+        for (mode, keybinds) in self.0.iter() {
+            let mut stable_sorted_mode_keybinds = BTreeMap::new();
+            for (key, actions) in keybinds {
+                stable_sorted_mode_keybinds.insert(key, actions);
+            }
+            stable_sorted.insert(mode, stable_sorted_mode_keybinds);
+        }
+        write!(f, "{:#?}", stable_sorted)
     }
 }
 
 impl Keybinds {
-    pub fn new() -> Keybinds {
-        Keybinds(HashMap::<InputMode, ModeKeybinds>::new())
-    }
-
-    fn from_default_assets() -> Keybinds {
-        config::Config::from_default_assets()
-            .expect("Keybinds from default assets Error!")
-            .keybinds
-    }
-
-    /// Entrypoint from the config module
-    pub fn get_default_keybinds_with_config(from_yaml: Option<KeybindsFromYaml>) -> Keybinds {
-        let default_keybinds = match from_yaml.clone() {
-            Some(keybinds) => match keybinds.unbind {
-                Unbind::All(true) => Keybinds::new(),
-                Unbind::All(false) | Unbind::Keys(_) => Keybinds::unbind(keybinds),
-            },
-            None => Keybinds::default(),
-        };
-
-        if let Some(keybinds) = from_yaml {
-            default_keybinds.merge_keybinds(Keybinds::from(keybinds))
-        } else {
-            default_keybinds
-        }
-    }
-
-    /// Unbinds the default keybindings in relation to their mode
-    fn unbind(from_yaml: KeybindsFromYaml) -> Keybinds {
-        let mut keybind_config = Self::new();
-        let mut unbind_config: HashMap<InputMode, Unbind> = HashMap::new();
-        let keybinds_from_yaml = from_yaml.keybinds;
-
-        for mode in InputMode::iter() {
-            if let Some(keybinds) = keybinds_from_yaml.get(&mode) {
-                for keybind in keybinds.iter() {
-                    match keybind {
-                        KeyActionUnbind::Unbind(unbind) => {
-                            unbind_config.insert(mode, unbind.unbind.clone());
-                        }
-                        KeyActionUnbind::KeyAction(key_action_from_yaml) => {
-                            keybind_config
-                                .0
-                                .insert(mode, ModeKeybinds::from(key_action_from_yaml.clone()));
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut default = Self::default().unbind_mode(unbind_config);
-
-        // Toplevel Unbinds
-        if let Unbind::Keys(_) = from_yaml.unbind {
-            let mut unbind_config: HashMap<InputMode, Unbind> = HashMap::new();
-            for mode in InputMode::iter() {
-                unbind_config.insert(mode, from_yaml.unbind.clone());
-            }
-            default = default.unbind_mode(unbind_config);
-        };
-
-        default.merge_keybinds(keybind_config)
-    }
-
-    /// Unbind [`Key`] bindings respective to their mode
-    fn unbind_mode(&self, unbind: HashMap<InputMode, Unbind>) -> Keybinds {
-        let mut keybinds = Keybinds::new();
-
-        for mode in InputMode::iter() {
-            if let Some(unbind) = unbind.get(&mode) {
-                match unbind {
-                    Unbind::All(true) => {}
-                    Unbind::Keys(keys) => {
-                        if let Some(defaults) = self.0.get(&mode) {
-                            keybinds
-                                .0
-                                .insert(mode, defaults.clone().unbind_keys(keys.to_vec()));
-                        }
-                    }
-                    Unbind::All(false) => {
-                        if let Some(defaults) = self.0.get(&mode) {
-                            keybinds.0.insert(mode, defaults.clone());
-                        }
-                    }
-                }
-            } else if let Some(defaults) = self.0.get(&mode) {
-                keybinds.0.insert(mode, defaults.clone());
-            }
-        }
-        keybinds
-    }
-
-    /// Merges two Keybinds structs into one Keybinds struct
-    /// `other` overrides the ModeKeybinds of `self`.
-    fn merge_keybinds(&self, other: Keybinds) -> Keybinds {
-        let mut keybinds = Keybinds::new();
-
-        for mode in InputMode::iter() {
-            let mut mode_keybinds = ModeKeybinds::new();
-            if let Some(keybind) = self.0.get(&mode) {
-                mode_keybinds.0.extend(keybind.0.clone());
-            };
-            if let Some(keybind) = other.0.get(&mode) {
-                mode_keybinds.0.extend(keybind.0.clone());
-            }
-            if !mode_keybinds.0.is_empty() {
-                keybinds.0.insert(mode, mode_keybinds);
-            }
-        }
-        keybinds
-    }
-
-    /// Converts a [`Key`] terminal event to a sequence of [`Action`]s according to the current
-    /// [`InputMode`] and [`Keybinds`].
-    pub fn key_to_actions(
-        key: &Key,
-        input: Vec<u8>,
+    pub fn get_actions_for_key_in_mode(
+        &self,
         mode: &InputMode,
-        keybinds: &Keybinds,
+        key: &KeyWithModifier,
+    ) -> Option<&Vec<Action>> {
+        self.0
+            .get(mode)
+            .and_then(|normal_mode_keybindings| normal_mode_keybindings.get(key))
+    }
+    pub fn get_actions_for_key_in_mode_or_default_action(
+        &self,
+        mode: &InputMode,
+        key_with_modifier: &KeyWithModifier,
+        raw_bytes: Vec<u8>,
+        default_input_mode: InputMode,
+        key_is_kitty_protocol: bool,
     ) -> Vec<Action> {
-        let mode_keybind_or_action = |action: Action| {
-            keybinds
-                .0
-                .get(mode)
-                .unwrap_or_else(|| unreachable!("Unrecognized mode: {:?}", mode))
-                .0
-                .get(key)
-                .cloned()
-                .unwrap_or_else(|| vec![action])
-        };
+        self.0
+            .get(mode)
+            .and_then(|mode_keybindings| {
+                if raw_bytes == &[10] {
+                    handle_ctrl_j(&mode_keybindings, &raw_bytes, key_is_kitty_protocol)
+                } else {
+                    mode_keybindings.get(key_with_modifier).cloned()
+                }
+            })
+            .unwrap_or_else(|| {
+                vec![self.default_action_for_mode(
+                    mode,
+                    Some(key_with_modifier),
+                    raw_bytes,
+                    default_input_mode,
+                    key_is_kitty_protocol,
+                )]
+            })
+    }
+    pub fn get_input_mode_mut(
+        &mut self,
+        input_mode: &InputMode,
+    ) -> &mut HashMap<KeyWithModifier, Vec<Action>> {
+        self.0.entry(*input_mode).or_insert_with(HashMap::new)
+    }
+    pub fn default_action_for_mode(
+        &self,
+        mode: &InputMode,
+        key_with_modifier: Option<&KeyWithModifier>,
+        raw_bytes: Vec<u8>,
+        default_input_mode: InputMode,
+        key_is_kitty_protocol: bool,
+    ) -> Action {
         match *mode {
-            InputMode::Normal | InputMode::Locked => mode_keybind_or_action(Action::Write(input)),
-            InputMode::RenameTab => mode_keybind_or_action(Action::TabNameInput(input)),
-            _ => mode_keybind_or_action(Action::NoOp),
+            InputMode::Locked => Action::Write {
+                key_with_modifier: key_with_modifier.cloned(),
+                bytes: raw_bytes,
+                is_kitty_keyboard_protocol: key_is_kitty_protocol,
+            },
+            mode if mode == default_input_mode => Action::Write {
+                key_with_modifier: key_with_modifier.cloned(),
+                bytes: raw_bytes,
+                is_kitty_keyboard_protocol: key_is_kitty_protocol,
+            },
+            InputMode::RenameTab => Action::TabNameInput { input: raw_bytes },
+            InputMode::RenamePane => Action::PaneNameInput { input: raw_bytes },
+            InputMode::EnterSearch => Action::SearchInput { input: raw_bytes },
+            _ => Action::NoOp,
+        }
+    }
+    pub fn to_keybinds_vec(&self) -> KeybindsVec {
+        let mut ret = vec![];
+        for (mode, mode_binds) in &self.0 {
+            let mut mode_binds_vec: Vec<(KeyWithModifier, Vec<Action>)> = vec![];
+            for (key, actions) in mode_binds {
+                mode_binds_vec.push((key.clone(), actions.clone()));
+            }
+            ret.push((*mode, mode_binds_vec))
+        }
+        ret
+    }
+    pub fn merge(&mut self, mut other: Keybinds) {
+        for (other_input_mode, mut other_input_mode_keybinds) in other.0.drain() {
+            let input_mode_keybinds = self
+                .0
+                .entry(other_input_mode)
+                .or_insert_with(|| Default::default());
+            for (other_action, other_action_keybinds) in other_input_mode_keybinds.drain() {
+                input_mode_keybinds.insert(other_action, other_action_keybinds);
+            }
         }
     }
 }
 
-impl ModeKeybinds {
-    fn new() -> ModeKeybinds {
-        ModeKeybinds(HashMap::<Key, Vec<Action>>::new())
-    }
+const MAX_SHORTCUT_SEARCH_DEPTH: usize = 4;
 
-    /// Merges `self` with `other`, if keys are the same, `other` overwrites.
-    fn merge(self, other: ModeKeybinds) -> ModeKeybinds {
-        let mut merged = self;
-        merged.0.extend(other.0);
-        merged
-    }
-
-    /// Remove [`Key`]'s from [`ModeKeybinds`]
-    fn unbind_keys(self, unbind: Vec<Key>) -> Self {
-        let mut keymap = self;
-        for key in unbind {
-            keymap.0.remove(&key);
-        }
-        keymap
-    }
-}
-
-impl From<KeybindsFromYaml> for Keybinds {
-    fn from(keybinds_from_yaml: KeybindsFromYaml) -> Keybinds {
-        let mut keybinds = Keybinds::new();
-
-        for mode in InputMode::iter() {
-            let mut mode_keybinds = ModeKeybinds::new();
-            for key_action in keybinds_from_yaml.keybinds.get(&mode).iter() {
-                for keybind in key_action.iter() {
-                    mode_keybinds = mode_keybinds.merge(ModeKeybinds::from(keybind.clone()));
+pub fn shortcut_for_action(
+    keybinds: &KeybindsVec,
+    base_mode: InputMode,
+    is_target_action: impl Fn(&Action) -> bool,
+) -> Option<Vec<KeyWithModifier>> {
+    let mode_binds = |mode: InputMode| -> Vec<(KeyWithModifier, Vec<Action>)> {
+        let mut binds = keybinds
+            .iter()
+            .find(|(bind_mode, _)| *bind_mode == mode)
+            .map(|(_, binds)| binds.clone())
+            .unwrap_or_default();
+        binds.sort_by(|(a, _), (b, _)| a.cmp(b));
+        binds
+    };
+    let mut visited: Vec<InputMode> = vec![base_mode];
+    let mut queue: Vec<(InputMode, Vec<KeyWithModifier>)> = vec![(base_mode, vec![])];
+    for _ in 0..MAX_SHORTCUT_SEARCH_DEPTH {
+        let mut next_queue: Vec<(InputMode, Vec<KeyWithModifier>)> = vec![];
+        for (mode, path) in &queue {
+            for (key, actions) in mode_binds(*mode) {
+                if actions.iter().any(&is_target_action) {
+                    let mut shortcut = path.clone();
+                    shortcut.push(key);
+                    return Some(shortcut);
                 }
             }
-            keybinds.0.insert(mode, mode_keybinds);
         }
-        keybinds
-    }
-}
-
-/// For each [`Key`] assigned to [`Action`]s,
-/// map the [`Action`]s to the [`Key`]
-impl From<KeyActionFromYaml> for ModeKeybinds {
-    fn from(key_action: KeyActionFromYaml) -> ModeKeybinds {
-        let actions = key_action.action;
-
-        ModeKeybinds(
-            key_action
-                .key
-                .into_iter()
-                .map(|k| (k, actions.clone()))
-                .collect::<HashMap<Key, Vec<Action>>>(),
-        )
-    }
-}
-
-impl From<KeyActionUnbind> for ModeKeybinds {
-    fn from(key_action_unbind: KeyActionUnbind) -> ModeKeybinds {
-        match key_action_unbind {
-            KeyActionUnbind::KeyAction(key_action) => ModeKeybinds::from(key_action),
-            KeyActionUnbind::Unbind(_) => ModeKeybinds::new(),
-        }
-    }
-}
-
-impl From<Vec<KeyActionFromYaml>> for ModeKeybinds {
-    fn from(key_action_from_yaml: Vec<KeyActionFromYaml>) -> ModeKeybinds {
-        let mut mode_keybinds = ModeKeybinds::new();
-
-        for keybind in key_action_from_yaml {
-            for key in keybind.key {
-                mode_keybinds.0.insert(key, keybind.action.clone());
+        for (mode, path) in &queue {
+            for (key, actions) in mode_binds(*mode) {
+                for action in &actions {
+                    if let Action::SwitchToMode {
+                        input_mode: next_mode,
+                    } = action
+                    {
+                        if !visited.contains(next_mode) {
+                            visited.push(*next_mode);
+                            let mut next_path = path.clone();
+                            next_path.push(key.clone());
+                            next_queue.push((*next_mode, next_path));
+                        }
+                    }
+                }
             }
         }
-        mode_keybinds
+        if next_queue.is_empty() {
+            return None;
+        }
+        queue = next_queue;
     }
+    None
 }
 
-impl Default for Unbind {
-    fn default() -> Unbind {
-        Unbind::All(false)
+// we need to do this because [10] in standard STDIN, [10] is both Enter (without a carriage
+// return) and ctrl-j - so here, if ctrl-j is bound we return its bound action, and otherwise we
+// just write the raw bytes to the terminal and let whichever program is there decide what they are
+fn handle_ctrl_j(
+    mode_keybindings: &HashMap<KeyWithModifier, Vec<Action>>,
+    raw_bytes: &[u8],
+    key_is_kitty_protocol: bool,
+) -> Option<Vec<Action>> {
+    let ctrl_j = KeyWithModifier::new(BareKey::Char('j')).with_ctrl_modifier();
+    if mode_keybindings.get(&ctrl_j).is_some() {
+        mode_keybindings.get(&ctrl_j).cloned()
+    } else {
+        Some(vec![Action::Write {
+            key_with_modifier: Some(ctrl_j),
+            bytes: raw_bytes.to_vec().clone(),
+            is_kitty_keyboard_protocol: key_is_kitty_protocol,
+        }])
     }
 }
 

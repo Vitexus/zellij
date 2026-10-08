@@ -1,0 +1,16 @@
+---
+source: zellij-utils/src/session_serialization.rs
+assertion_line: 2207
+expression: kdl.0
+---
+layout {
+    tab name="First tab" {
+        pane
+    }
+    tab name="Second tab" {
+        pane split_direction="vertical" {
+            pane size=10
+            pane size=10
+        }
+    }
+}

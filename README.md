@@ -10,68 +10,109 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/zellij-org/zellij/main/assets/demo.gif" alt="demo">
 </p>
-
+<h4 align="center">
+  [<a href="https://zellij.dev/documentation/installation">Installation</a>]
+  [<a href="https://zellij.dev/screencasts/">Screencasts & Tutorials</a>]
+  [<a href="https://zellij.dev/documentation/configuration">Configuration</a>]
+  [<a href="https://zellij.dev/documentation/layouts">Layouts</a>]
+  [<a href="https://zellij.dev/documentation/faq">FAQ</a>]
+</h4>
 <p align="center">
-  <a href="https://discord.gg/CrUAFH3"><img alt="Discord Chat" src="https://img.shields.io/discord/771367133715628073"></a>
+  <a href="https://discord.gg/CrUAFH3"><img alt="Discord Chat" src="https://img.shields.io/discord/771367133715628073?color=5865F2&label=discord&style=flat-square"></a>
+  <a href="https://matrix.to/#/#zellij_general:matrix.org"><img alt="Matrix Chat" src="https://img.shields.io/matrix/zellij_general:matrix.org?color=1d7e64&label=matrix%20chat&style=flat-square&logo=matrix"></a>
+  <a href="https://zellij.dev/documentation/"><img alt="Zellij documentation" src="https://img.shields.io/badge/zellij-documentation-fc0060?style=flat-square"></a>
 </p>
 
+<br>
+    <p align="center">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/bc5daac4-140a-4b83-8729-71c944ee1100">
+      <img src="https://github.com/user-attachments/assets/55156624-a71a-46b5-939e-f562e3b2dd7f" alt="Sponsored by ">
+    </picture>
+    &nbsp;
+    &nbsp;
+    <a href="https://www.gresearch.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/d609936a-abf8-4406-8cfc-889f76a09d74">
+          <img src="https://github.com/user-attachments/assets/742ae902-fe9d-41c6-baf2-4bc143061da3" alt="gresearch logo">
+        </picture>
+    </a>
+</p>
 
 # What is this?
 
-[Zellij](https://en.wikipedia.org/wiki/Zellij) is a workspace aimed at developers, ops-oriented people and anyone who loves the terminal.
-At its core, it is a terminal multiplexer (similar to [tmux](https://github.com/tmux/tmux) and [screen](https://www.gnu.org/software/screen/)), but this is merely its infrastructure layer.
+[Zellij](#origin-of-the-name) is a workspace aimed at developers, ops-oriented people and anyone who loves the terminal. Similar programs are sometimes called "Terminal Multiplexers".
 
-Zellij includes a [layout system](https://zellij.dev/documentation/layouts.html), and a [plugin system](https://zellij.dev/documentation/plugins.html) allowing one to create plugins in any language that compiles to WebAssembly.
+Zellij is designed around the philosophy that one must not sacrifice simplicity for power, taking pride in its great experience out of the box as well as the advanced features it places at its users' fingertips.
+
+Zellij is geared toward beginner and power users alike - allowing deep customizability, personal automation through [layouts](https://zellij.dev/documentation/layouts.html), true multiplayer collaboration, unique UX features such as floating and stacked panes, and a [plugin system](https://zellij.dev/documentation/plugins.html) allowing one to create plugins in any language that compiles to WebAssembly.
+
+Zellij includes a built-in [web-client](https://zellij.dev/tutorials/web-client/), making a terminal optional.
+
+You can get started by [installing](https://zellij.dev/documentation/installation.html) Zellij and checking out the [Screencasts & Tutorials](https://zellij.dev/screencasts/).
 
 For more details about our future plans, read about upcoming features in our [roadmap](#roadmap).
 
-Zellij was initially called "Mosaic".
-
 ## How do I install it?
-You can install it through `cargo`:
+
+The easiest way to install Zellij is through a [package for your OS](./docs/THIRD_PARTY_INSTALL.md).
+
+If one is not available for your OS, you could download a prebuilt binary from the [latest release](https://github.com/zellij-org/zellij/releases/latest) and place it in your `$PATH`. If you'd like, we could [automatically choose one for you](#try-zellij-without-installing).
+
+You can also install (compile) with `cargo`:
 
 ```
-cargo install zellij
+cargo install --locked zellij
 ```
 
-Or you can download a prebuilt binary from our [Releases](https://github.com/zellij-org/zellij/releases).
+#### Try Zellij without installing
 
-The default plugins make use of characters that are mostly found in [nerdfonts](https://www.nerdfonts.com/).
-To get the best experience either install nerdfonts, or use the simplified ui by starting Zellij with `zellij options --simplified-ui`, or putting `simplified_ui: true` in the config file.
+bash/zsh:
+```bash
+bash <(curl -L https://zellij.dev/launch)
+```
+fish/xonsh:
+```bash
+bash -c 'bash <(curl -L https://zellij.dev/launch)'
+```
 
-## How do I hack on it? (Contributing)
+#### Installing from `main`
+Installing Zellij from the `main` branch is not recommended. This branch represents pre-release code, is constantly being worked on and may contain broken or unusable features. In addition, using it may corrupt the cache for future versions, forcing users to clear it before they can use the officially released version.
+
+That being said - no-one will stop you from using it (and bug reports involving new features are greatly appreciated), but please consider using the latest release instead as detailed at the top of this section.
+
+## How do I start a development environment?
+
 * Clone the project
-* Install cargo-make with `cargo install --force cargo-make`
-* In the project folder, for debug builds run: `cargo make run`
-* To run all tests: `cargo make test`
+* In the project folder, for debug builds run: `cargo xtask run`
+* To run all tests: `cargo xtask test`
 
-For more build commands, see [`Contributing.md`](CONTRIBUTING.md).
+For more build commands, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Configuration
-For configuring Zellij, please see the [Configuration documentation](https://zellij.dev/documentation/configuration.html).
+For configuring Zellij, please see the [Configuration Documentation](https://zellij.dev/documentation/configuration.html).
 
-## What is the current status of the project?
-
-Zellij should be ready for everyday use, but it's still classified as a beta. This means that there might be a rare crash or wrong behaviour here and there, but that once found it should be fixed rather quickly. If this happens to you, we would be very happy if you could open an issue and tell us how to reproduce it as best you can.
-
-## How do I get involved?
-
-Zellij is a labour of love built by an enthusiastic team of volunteers. We eagerly welcome anyone who would like to join us, regardless of experience level.
-
-To get started, you can:
-1. Take a look at the "Issues" in this repository - especially those marked "Good first issue". Those with the "Help Wanted" tag probably don't have anyone else working on them.
-2. Drop by our [chat](https://discord.gg/CrUAFH3) and ask what you can work on, or how to get started.
-3. Open an issue with your idea(s) for the project or tell us about them in our chat.
-
-And most importantly, please read our [code of conduct](CODE_OF_CONDUCT.md).
+## About issues in this repository
+Issues in this repository, whether open or closed, do not necessarily indicate a problem or a bug in the software. They only indicate that the reporter wanted to communicate their experiences or thoughts to the maintainers. The Zellij maintainers do their best to go over and reply to all issue reports, but unfortunately cannot promise these will always be dealt with or even read. Your understanding is appreciated.
 
 ## Roadmap
-This section contains an ever-changing list of the major features that are either currently being worked on, or planned for the near future.
-  * **A web client/server** - Connect to Zellij through the browser instead of opening a terminal window. Either on a local or remote machine.
-  * **Share sessions with others** - See the focused window and cursor of other users, work on a problem or a code base together in real time.
-  * **Support for multiple terminal windows across screens** - Transfer panes across different windows and screens by having them all belong to the same session.
-  * **Smart layouts** - expand the current layout system so that it rearranges and hides panes intelligently when new ones are added or the window size is changed.
+Presented here is the project roadmap, divided into three main sections.
+
+These are issues that are either being actively worked on or are planned for the near future.
+
+***If you'll click on the image, you'll be led to an SVG version of it on the website where you can directly click on every issue***
+
+[![roadmap](https://github.com/user-attachments/assets/bb55d213-4a68-4c84-ae72-7db5c9bf94fb)](https://zellij.dev/roadmap)
+
+## Origin of the Name
+[From Wikipedia, the free encyclopedia](https://en.wikipedia.org/wiki/Zellij)
+
+Zellij (Arabic: الزليج, romanized: zillīj; also spelled zillij or zellige) is a style of mosaic tilework made from individually hand-chiseled tile pieces. The pieces were typically of different colours and fitted together to form various patterns on the basis of tessellations, most notably elaborate Islamic geometric motifs such as radiating star patterns composed of various polygons. This form of Islamic art is one of the main characteristics of architecture in the western Islamic world. It is found in the architecture of Morocco, the architecture of Algeria, early Islamic sites in Tunisia, and in the historic monuments of al-Andalus (in the Iberian Peninsula).
 
 ## License
 
 MIT
+
+## Sponsored by
+<a href="https://terminaltrove.com/"><img src="https://avatars.githubusercontent.com/u/121595180?s=200&v=4" width="80px"></a>
+<a href="https://github.com/redcathode"><img src="https://avatars.githubusercontent.com/u/75963592?s=200&v=4" width="80px"></a>

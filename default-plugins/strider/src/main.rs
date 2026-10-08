@@ -1,97 +1,207 @@
+mod file_list_view;
+mod platform;
+mod search_view;
+mod shared;
 mod state;
 
-use colored::*;
-use state::{FsEntry, State};
-use std::{cmp::min, fs::read_dir};
+use platform::Platform;
+use shared::{
+    render_current_path, render_instruction_line, render_search_term, render_virtual_root_header,
+};
+use state::{refresh_directory, State};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use zellij_tile::prelude::*;
 
 register_plugin!(State);
 
 impl ZellijPlugin for State {
-    fn load(&mut self) {
-        refresh_directory(self);
-        subscribe(&[EventType::KeyPress]);
+    fn load(&mut self, configuration: BTreeMap<String, String>) {
+        let plugin_ids = get_plugin_ids();
+        let initial_cwd_str = plugin_ids.initial_cwd.to_string_lossy().to_string();
+        let platform = Platform::detect(&initial_cwd_str);
+        self.platform = platform;
+        self.initial_cwd = Platform::normalize(&plugin_ids.initial_cwd);
+        self.file_list_view.platform = platform;
+        self.search_view.platform = platform;
+        let show_hidden_files = configuration
+            .get("show_hidden_files")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        self.hide_hidden_files = !show_hidden_files;
+        self.close_on_selection = configuration
+            .get("close_on_selection")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        subscribe(&[
+            EventType::Key,
+            EventType::Mouse,
+            EventType::CustomMessage,
+            EventType::Timer,
+            EventType::FileSystemUpdate,
+            EventType::HostFolderChanged,
+            EventType::PermissionRequestResult,
+        ]);
+        self.file_list_view.clear_selected();
+
+        match configuration
+            .get("caller_cwd")
+            .map(|c| Platform::normalize(&PathBuf::from(c)))
+        {
+            Some(caller_cwd) => {
+                self.file_list_view.path = caller_cwd;
+            },
+            None => {
+                self.file_list_view.path = self.initial_cwd.clone();
+            },
+        }
+        if self.initial_cwd != self.file_list_view.path {
+            change_host_folder(self.file_list_view.path.clone());
+        } else {
+            scan_host_folder(&"/host");
+        }
     }
 
-    fn update(&mut self, event: Event) {
-        if let Event::KeyPress(key) = event {
-            match key {
-                Key::Up | Key::Char('k') => {
-                    *self.selected_mut() = self.selected().saturating_sub(1);
-                }
-                Key::Down | Key::Char('j') => {
-                    let next = self.selected().saturating_add(1);
-                    *self.selected_mut() = min(self.files.len() - 1, next);
-                }
-                Key::Right | Key::Char('\n') | Key::Char('l') if !self.files.is_empty() => {
-                    match self.files[self.selected()].clone() {
-                        FsEntry::Dir(p, _) => {
-                            self.path = p;
-                            refresh_directory(self);
-                        }
-                        FsEntry::File(p, _) => open_file(&p),
+    fn update(&mut self, event: Event) -> bool {
+        let mut should_render = false;
+        match event {
+            Event::FileSystemUpdate(paths) => {
+                self.update_files(paths);
+                should_render = true;
+            },
+            Event::HostFolderChanged(_new_host_folder) => {
+                scan_host_folder(&"/host");
+                should_render = true;
+            },
+            Event::Key(key) => match key.bare_key {
+                BareKey::Char(character) if key.has_no_modifiers() => {
+                    self.update_search_term(character);
+                    should_render = true;
+                },
+                BareKey::Backspace if key.has_no_modifiers() => {
+                    self.handle_backspace();
+                    should_render = true;
+                },
+                BareKey::Esc if key.has_no_modifiers() => {
+                    if self.is_in_virtual_root {
+                        self.exit_virtual_root();
+                    } else if self.is_searching {
+                        self.clear_search_term();
+                    } else {
+                        self.file_list_view.clear_selected();
                     }
-                }
-                Key::Left | Key::Char('h') => {
-                    self.path.pop();
-                    refresh_directory(self);
-                }
-
-                Key::Char('.') => {
+                    should_render = true;
+                },
+                BareKey::Char('c') if key.has_modifiers(&[KeyModifier::Ctrl]) => {
+                    self.clear_search_term_or_descend();
+                },
+                BareKey::Up if key.has_no_modifiers() => {
+                    self.move_selection_up();
+                    should_render = true;
+                },
+                BareKey::Down if key.has_no_modifiers() => {
+                    self.move_selection_down();
+                    should_render = true;
+                },
+                BareKey::Right | BareKey::Tab | BareKey::Enter if key.has_no_modifiers() => {
+                    self.traverse_dir();
+                    should_render = true;
+                },
+                BareKey::Right if key.has_no_modifiers() => {
+                    self.traverse_dir();
+                    should_render = true;
+                },
+                BareKey::Left if key.has_no_modifiers() => {
+                    if !self.is_in_virtual_root {
+                        self.descend_to_previous_path();
+                    }
+                    should_render = true;
+                },
+                BareKey::Char('e') if key.has_modifiers(&[KeyModifier::Ctrl]) => {
+                    should_render = true;
                     self.toggle_hidden_files();
-                    refresh_directory(self);
-                }
-
+                    refresh_directory(&self.file_list_view.path);
+                },
                 _ => (),
-            };
+            },
+            Event::Mouse(mouse_event) => match mouse_event {
+                Mouse::ScrollDown(_) => {
+                    self.move_selection_down();
+                    should_render = true;
+                },
+                Mouse::ScrollUp(_) => {
+                    self.move_selection_up();
+                    should_render = true;
+                },
+                Mouse::LeftClick(line, _) => {
+                    self.handle_left_click(line);
+                    should_render = true;
+                },
+                Mouse::Hover(line, _) => {
+                    if line >= 0 {
+                        self.handle_mouse_hover(line);
+                        should_render = true;
+                    }
+                },
+                _ => {},
+            },
+            _ => {
+                dbg!("Unknown event {:?}", event);
+            },
+        };
+        should_render
+    }
+
+    fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
+        if pipe_message.is_private && pipe_message.name == "filepicker" {
+            let open_directly = pipe_message
+                .args
+                .get("open_directly")
+                .map(|v| v == "true")
+                .unwrap_or(false);
+            if open_directly {
+                // Standalone mode: selecting a file opens it directly,
+                // then the plugin closes itself.
+                self.close_on_selection = true;
+            } else {
+                // Filepicker callback mode: send result back to caller.
+                #[allow(unused_variables)]
+                // pipe_id is used inside #[cfg(target_family = "wasm")] block
+                if let PipeSource::Cli(pipe_id) = &pipe_message.source {
+                    #[cfg(target_family = "wasm")]
+                    block_cli_pipe_input(pipe_id);
+                }
+                self.handling_filepick_request_from =
+                    Some((pipe_message.source, pipe_message.args));
+            }
+            true
+        } else {
+            false
         }
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
-        for i in 0..rows {
-            if self.selected() < self.scroll() {
-                *self.scroll_mut() = self.selected();
-            }
-            if self.selected() - self.scroll() + 2 > rows {
-                *self.scroll_mut() = self.selected() + 2 - rows;
-            }
-            let i = self.scroll() + i;
-            if let Some(entry) = self.files.get(i) {
-                let mut path = entry.as_line(cols).normal();
-
-                if let FsEntry::Dir(..) = entry {
-                    path = path.dimmed().bold();
-                }
-
-                if i == self.selected() {
-                    println!("{}", path.reversed());
-                } else {
-                    println!("{}", path);
-                }
+        self.current_rows = Some(rows);
+        let rows_for_list = rows.saturating_sub(6);
+        if self.is_in_virtual_root {
+            render_search_term("");
+            render_virtual_root_header(cols);
+            self.render_virtual_root(rows_for_list, cols);
+        } else {
+            render_search_term(&self.search_term);
+            render_current_path(
+                &self.file_list_view.path,
+                self.file_list_view.path_is_dir,
+                self.handling_filepick_request_from.is_some(),
+                cols,
+                self.platform,
+            );
+            if self.is_searching {
+                self.search_view.render(rows_for_list, cols);
             } else {
-                println!();
+                self.file_list_view.render(rows_for_list, cols);
             }
         }
+        render_instruction_line(rows, cols);
     }
-}
-
-fn refresh_directory(state: &mut State) {
-    state.files = read_dir(&state.path)
-        .unwrap()
-        .filter_map(|res| {
-            res.and_then(|d| {
-                if d.metadata()?.is_dir() {
-                    let children = read_dir(d.path())?.count();
-                    Ok(FsEntry::Dir(d.path(), children))
-                } else {
-                    let size = d.metadata()?.len();
-                    Ok(FsEntry::File(d.path(), size))
-                }
-            })
-            .ok()
-            .filter(|d| !d.is_hidden_file() || !state.hide_hidden_files)
-        })
-        .collect();
-
-    state.files.sort_unstable();
 }

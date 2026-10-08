@@ -1,23 +1,21 @@
-use std::env;
-use std::os::unix::io::RawFd;
-use std::path::PathBuf;
-use std::process::{Child, Command};
-use std::sync::{Arc, Mutex};
+use crate::{panes::PaneId, ClientId};
 
-use zellij_utils::{async_std, interprocess, libc, nix, signal_hook, zellij_tile};
+use interprocess::local_socket::Stream as LocalSocketStream;
 
-use async_std::fs::File as AsyncFile;
-use async_std::os::unix::io::FromRawFd;
-use interprocess::local_socket::LocalSocketStream;
-use nix::pty::{forkpty, Winsize};
-use nix::sys::signal::{kill, Signal};
-use nix::sys::termios;
-use nix::sys::wait::waitpid;
-use nix::unistd::{self, ForkResult};
-use signal_hook::consts::*;
-use zellij_tile::data::Palette;
+#[cfg(not(windows))]
+use crate::os_input_output_unix::UnixPtyBackend as PtyBackendImpl;
+#[cfg(windows)]
+use crate::os_input_output_windows::WindowsPtyBackend as PtyBackendImpl;
+
+use interprocess;
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+use tempfile::tempfile;
 use zellij_utils::{
-    errors::ErrorContext,
+    channels,
+    channels::TrySendError,
+    data::Palette,
+    errors::prelude::*,
+    input::command::{RunCommand, TerminalAction},
     ipc::{
         ClientToServerMsg, ExitReason, IpcReceiverWithContext, IpcSenderWithContext,
         ServerToClientMsg,
@@ -25,278 +23,745 @@ use zellij_utils::{
     shared::default_palette,
 };
 
-use async_std::io::ReadExt;
+use std::{
+    collections::{BTreeMap, HashMap},
+    env,
+    fs::File,
+    io::{self, Write},
+    path::PathBuf,
+    process::Command,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+};
+
 pub use async_trait::async_trait;
 
-pub use nix::unistd::Pid;
-
-pub(crate) fn set_terminal_size_using_fd(fd: RawFd, columns: u16, rows: u16) {
-    // TODO: do this with the nix ioctl
-    use libc::ioctl;
-    use libc::TIOCSWINSZ;
-
-    let winsize = Winsize {
-        ws_col: columns,
-        ws_row: rows,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    // TIOCGWINSZ is an u32, but the second argument to ioctl is u64 on
-    // some platforms. When checked on Linux, clippy will complain about
-    // useless conversion.
-    #[allow(clippy::useless_conversion)]
-    unsafe {
-        ioctl(fd, TIOCSWINSZ.into(), &winsize)
-    };
-}
-
-/// Handle some signals for the child process. This will loop until the child
-/// process exits.
-fn handle_command_exit(mut child: Child) {
-    // register the SIGINT signal (TODO handle more signals)
-    let mut signals = signal_hook::iterator::Signals::new(&[SIGINT]).unwrap();
-    'handle_exit: loop {
-        // test whether the child process has exited
-        match child.try_wait() {
-            Ok(Some(_status)) => {
-                // if the child process has exited, break outside of the loop
-                // and exit this function
-                // TODO: handle errors?
-                break 'handle_exit;
-            }
-            Ok(None) => {
-                ::std::thread::sleep(::std::time::Duration::from_millis(100));
-            }
-            Err(e) => panic!("error attempting to wait: {}", e),
-        }
-
-        for signal in signals.pending() {
-            if let SIGINT = signal {
-                child.kill().unwrap();
-                child.wait().unwrap();
-                break 'handle_exit;
+/// Check whether a candidate path refers to an executable file, considering
+/// PATHEXT extensions on Windows (e.g. `.exe`, `.cmd`).
+///
+/// On Windows, when the candidate has no extension we try each PATHEXT
+/// variant BEFORE the bare match, mirroring cmd.exe's resolution. Tools like
+/// Composer install both `composer` (a Unix launcher) and `composer.bat`
+/// (the Windows launcher) side by side; returning the bare file would send
+/// a non-PE binary to CreateProcessW and fail with ERROR_BAD_EXE_FORMAT.
+fn find_executable(candidate: &std::path::Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        if candidate.extension().is_none() {
+            if let Some(pathext) = env::var_os("PATHEXT") {
+                let pathext = pathext.to_string_lossy();
+                for ext in pathext.split(';') {
+                    let ext = ext.trim();
+                    if ext.is_empty() {
+                        continue;
+                    }
+                    let mut with_ext = candidate.as_os_str().to_os_string();
+                    with_ext.push(ext);
+                    let with_ext_path = PathBuf::from(with_ext);
+                    if with_ext_path.exists() && with_ext_path.is_file() {
+                        return Some(with_ext_path);
+                    }
+                }
             }
         }
     }
+    if candidate.exists() && candidate.is_file() {
+        return Some(candidate.to_path_buf());
+    }
+    None
 }
 
-/// Spawns a new terminal from the parent terminal with [`termios`](termios::Termios)
-/// `orig_termios`.
-///
-/// If a `file_to_open` is given, the text editor specified by environment variable `EDITOR`
-/// (or `VISUAL`, if `EDITOR` is not set) will be started in the new terminal, with the given
-/// file open. If no file is given, the shell specified by environment variable `SHELL` will
-/// be started in the new terminal.
-///
-/// # Panics
-///
-/// This function will panic if both the `EDITOR` and `VISUAL` environment variables are not
-/// set.
-// FIXME this should probably be split into different functions, or at least have less levels
-// of indentation in some way
-fn spawn_terminal(file_to_open: Option<PathBuf>, orig_termios: termios::Termios) -> (RawFd, Pid) {
-    let (pid_primary, pid_secondary): (RawFd, Pid) = {
-        match forkpty(None, Some(&orig_termios)) {
-            Ok(fork_pty_res) => {
-                let pid_primary = fork_pty_res.master;
-                let pid_secondary = match fork_pty_res.fork_result {
-                    ForkResult::Parent { child } => {
-                        // fcntl(pid_primary, FcntlArg::F_SETFL(OFlag::empty())).expect("could not fcntl");
-                        child
-                    }
-                    ForkResult::Child => match file_to_open {
-                        Some(file_to_open) => {
-                            if env::var("EDITOR").is_err() && env::var("VISUAL").is_err() {
-                                panic!("Can't edit files if an editor is not defined. To fix: define the EDITOR or VISUAL environment variables with the path to your editor (eg. /usr/bin/vim)");
-                            }
-                            let editor =
-                                env::var("EDITOR").unwrap_or_else(|_| env::var("VISUAL").unwrap());
+pub type PaneEnv = BTreeMap<String, Option<String>>;
 
-                            let child = Command::new(editor)
-                                .args(&[file_to_open])
-                                .spawn()
-                                .expect("failed to spawn");
-                            handle_command_exit(child);
-                            ::std::process::exit(0);
-                        }
-                        None => {
-                            let child = Command::new(env::var("SHELL").unwrap())
-                                .spawn()
-                                .expect("failed to spawn");
-                            handle_command_exit(child);
-                            ::std::process::exit(0);
-                        }
-                    },
-                };
-                (pid_primary, pid_secondary)
+pub fn env_value(pane_env: &PaneEnv, name: &str) -> Option<String> {
+    match pane_env.get(name) {
+        Some(value) => value.clone(),
+        None => env::var(name).ok(),
+    }
+}
+
+/// Resolve a command to its absolute path, searching the working directory,
+/// then PATH (and PATHEXT on Windows).
+pub(crate) fn resolve_command(cmd: &RunCommand, pane_env: &PaneEnv) -> Option<PathBuf> {
+    let command = &cmd.command;
+    match cmd.cwd.as_ref() {
+        Some(cwd) => {
+            if let Some(resolved) = find_executable(&cwd.join(command)) {
+                return Some(resolved);
             }
-            Err(e) => {
-                panic!("failed to fork {:?}", e);
+        },
+        None => {
+            if let Some(resolved) = find_executable(command) {
+                return Some(resolved);
+            }
+        },
+    }
+    let paths = match pane_env.get("PATH") {
+        Some(value) => value.clone().map(std::ffi::OsString::from),
+        None => env::var_os("PATH"),
+    };
+    if let Some(paths) = paths {
+        for path in env::split_paths(&paths) {
+            if let Some(resolved) = find_executable(&path.join(command)) {
+                return Some(resolved);
             }
         }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub(crate) fn command_exists(cmd: &RunCommand, pane_env: &PaneEnv) -> bool {
+    resolve_command(cmd, pane_env).is_some()
+}
+
+// this is a utility method to separate the arguments from a pathbuf before we turn it into a
+// Command. eg. "/usr/bin/vim -e" ==> "/usr/bin/vim" + "-e" (the latter will be pushed to args)
+fn separate_command_arguments(command: &mut PathBuf, args: &mut Vec<String>) {
+    let mut parts = vec![];
+    let mut current_part = String::new();
+    for part in command.display().to_string().split_ascii_whitespace() {
+        current_part.push_str(part);
+        if current_part.ends_with('\\') {
+            let _ = current_part.pop();
+            current_part.push(' ');
+        } else {
+            let current_part = std::mem::replace(&mut current_part, String::new());
+            parts.push(current_part);
+        }
+    }
+    if !parts.is_empty() {
+        *command = PathBuf::from(parts.remove(0));
+        args.append(&mut parts);
+    }
+}
+
+/// If a [`TerminalAction::OpenFile(file)`] is given, the text editor specified by environment variable `EDITOR`
+/// (or `VISUAL`, if `EDITOR` is not set) will be started in the new terminal, with the given
+/// file open.
+/// If [`TerminalAction::RunCommand(RunCommand)`] is given, the command will be started
+/// in the new terminal.
+/// If None is given, the shell specified by environment variable `SHELL` will
+/// be started in the new terminal.
+///
+/// Returns (cmd, failover_cmd).
+fn build_command(
+    terminal_action: TerminalAction,
+    default_editor: Option<PathBuf>,
+    pane_env: &PaneEnv,
+) -> (RunCommand, Option<RunCommand>) {
+    let mut failover_cmd_args = None;
+    let cmd = match terminal_action {
+        TerminalAction::OpenFile(mut payload) => {
+            if payload.path.is_relative() {
+                if let Some(cwd) = payload.cwd.as_ref() {
+                    payload.path = cwd.join(payload.path);
+                }
+            }
+            let mut command = default_editor.unwrap_or_else(|| {
+                PathBuf::from(
+                    env_value(pane_env, "EDITOR")
+                        .or_else(|| env_value(pane_env, "VISUAL"))
+                        .unwrap_or_else(|| "vi".into()),
+                )
+            });
+
+            let mut args = vec![];
+
+            if !command.is_dir() {
+                separate_command_arguments(&mut command, &mut args);
+            }
+            let file_to_open = payload
+                .path
+                .into_os_string()
+                .into_string()
+                .expect("Not valid Utf8 Encoding");
+            if let Some(line_number) = payload.line_number {
+                if command.ends_with("vim")
+                    || command.ends_with("nvim")
+                    || command.ends_with("emacs")
+                    || command.ends_with("nano")
+                    || command.ends_with("kak")
+                {
+                    failover_cmd_args = Some(vec![file_to_open.clone()]);
+                    args.push(format!("+{}", line_number));
+                    args.push(file_to_open);
+                } else if command.ends_with("hx") || command.ends_with("helix") {
+                    // at the time of writing, helix only supports this syntax
+                    // and it might be a good idea to leave this here anyway
+                    // to keep supporting old versions
+                    args.push(format!("{}:{}", file_to_open, line_number));
+                } else {
+                    args.push(file_to_open);
+                }
+            } else {
+                args.push(file_to_open);
+            }
+            RunCommand {
+                command,
+                args,
+                cwd: payload.cwd,
+                hold_on_close: false,
+                hold_on_start: false,
+                ..Default::default()
+            }
+        },
+        TerminalAction::RunCommand(command) => command,
     };
-    (pid_primary, pid_secondary)
+    let failover_cmd = if let Some(failover_cmd_args) = failover_cmd_args {
+        let mut failover = cmd.clone();
+        failover.args = failover_cmd_args;
+        Some(failover)
+    } else {
+        None
+    };
+    (cmd, failover_cmd)
+}
+
+// The ClientSender is in charge of sending messages to the client on a special thread
+// This is done so that when the unix socket buffer is full, we won't block the entire router
+// thread
+// When the above happens, the ClientSender buffers messages in hopes that the congestion will be
+// freed until we runs out of buffer space.
+// If we run out of buffer space, we bubble up an error sot hat the router thread will give up on
+// this client and we'll stop sending messages to it.
+// If the client ever becomes responsive again, we'll send one final "Buffer full" message so it
+// knows what happened.
+const CLIENT_BUFFER_LIMIT: usize = 5000;
+
+#[derive(Clone)]
+struct ClientBuffer {
+    sender: channels::Sender<ServerToClientMsg>,
+    queued: Arc<AtomicUsize>,
+    limit: usize,
+}
+
+struct ClientBufferReceiver {
+    receiver: channels::Receiver<ServerToClientMsg>,
+    queued: Arc<AtomicUsize>,
+}
+
+fn client_buffer(limit: usize) -> (ClientBuffer, ClientBufferReceiver) {
+    let (sender, receiver) = channels::unbounded();
+    let queued = Arc::new(AtomicUsize::new(0));
+    (
+        ClientBuffer {
+            sender,
+            queued: queued.clone(),
+            limit,
+        },
+        ClientBufferReceiver { receiver, queued },
+    )
+}
+
+impl ClientBuffer {
+    fn try_send(&self, msg: ServerToClientMsg) -> Result<(), TrySendError<ServerToClientMsg>> {
+        if self.queued.fetch_add(1, Ordering::AcqRel) >= self.limit {
+            self.queued.fetch_sub(1, Ordering::AcqRel);
+            return Err(TrySendError::Full(msg));
+        }
+        self.sender.send(msg).map_err(|err| {
+            self.queued.fetch_sub(1, Ordering::AcqRel);
+            TrySendError::Disconnected(err.0)
+        })
+    }
+}
+
+impl ClientBufferReceiver {
+    fn recv(&self) -> Option<ServerToClientMsg> {
+        let msg = self.receiver.recv().ok()?;
+        self.queued.fetch_sub(1, Ordering::AcqRel);
+        Some(msg)
+    }
+}
+
+#[derive(Clone)]
+struct ClientSender {
+    client_id: ClientId,
+    client_buffer_sender: ClientBuffer,
+}
+
+impl ClientSender {
+    pub fn new(client_id: ClientId, mut sender: IpcSenderWithContext<ServerToClientMsg>) -> Self {
+        // FIXME(hartan): This queue is responsible for buffering messages between server and
+        // client. If it fills up, the client is disconnected with a "Buffer full" sort of error
+        // message. It was previously found to be too small (with depth 50), so it was increased to
+        // 5000 instead. This decision was made because it was found that a queue of depth 5000
+        // doesn't cause noticeable increase in RAM usage, but there's no reason beyond that. If in
+        // the future this is found to fill up too quickly again, it may be worthwhile to increase
+        // the size even further (or better yet, implement a redraw-on-backpressure mechanism).
+        // We, the zellij maintainers, have decided against an unbounded
+        // queue for the time being because we want to prevent e.g. the whole session being killed
+        // (by OOM-killers or some other mechanism) just because a single client doesn't respond.
+        let (client_buffer_sender, client_buffer_receiver) = client_buffer(CLIENT_BUFFER_LIMIT);
+        std::thread::spawn(move || {
+            let err_context = || format!("failed to send message to client {client_id}");
+            while let Some(msg) = client_buffer_receiver.recv() {
+                sender
+                    .send_server_msg(msg)
+                    .with_context(err_context)
+                    .non_fatal();
+            }
+            let _ = sender.send_server_msg(ServerToClientMsg::Exit {
+                exit_reason: ExitReason::Disconnect,
+            });
+        });
+        ClientSender {
+            client_id,
+            client_buffer_sender,
+        }
+    }
+    pub fn send_or_buffer(&self, msg: ServerToClientMsg) -> Result<()> {
+        let err_context = || {
+            format!(
+                "failed to send or buffer message for client {}",
+                self.client_id
+            )
+        };
+
+        self.client_buffer_sender
+            .try_send(msg)
+            .or_else(|err| {
+                if let TrySendError::Full(_) = err {
+                    log::warn!(
+                        "client {} is processing server messages too slow",
+                        self.client_id
+                    );
+                }
+                Err(err)
+            })
+            .with_context(err_context)
+    }
 }
 
 #[derive(Clone)]
 pub struct ServerOsInputOutput {
-    orig_termios: Arc<Mutex<termios::Termios>>,
-    receive_instructions_from_client: Option<Arc<Mutex<IpcReceiverWithContext<ClientToServerMsg>>>>,
-    send_instructions_to_client: Arc<Mutex<Option<IpcSenderWithContext<ServerToClientMsg>>>>,
+    pty_backend: PtyBackendImpl,
+    client_senders: Arc<Mutex<HashMap<ClientId, ClientSender>>>,
+    cached_resizes: Arc<Mutex<Option<BTreeMap<u32, (u16, u16, Option<u16>, Option<u16>)>>>>,
 }
+
+/// A null `AsyncReader` for held panes (produces EOF immediately).
+pub(crate) struct NullAsyncReader;
 
 // async fn in traits is not supported by rust, so dtolnay's excellent async_trait macro is being
 // used. See https://smallcultfollowing.com/babysteps/blog/2019/10/26/async-fn-in-traits-are-hard/
 #[async_trait]
 pub trait AsyncReader: Send + Sync {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error>;
-}
-
-/// An `AsyncReader` that wraps a `RawFd`
-struct RawFdAsyncReader {
-    fd: async_std::fs::File,
-}
-
-impl RawFdAsyncReader {
-    fn new(fd: RawFd) -> RawFdAsyncReader {
-        RawFdAsyncReader {
-            /// The supplied `RawFd` is consumed by the created `RawFdAsyncReader`, closing it when dropped
-            fd: unsafe { AsyncFile::from_raw_fd(fd) },
-        }
-    }
+    async fn read_chunk(&mut self, max: usize) -> Result<Vec<u8>, io::Error>;
 }
 
 #[async_trait]
-impl AsyncReader for RawFdAsyncReader {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-        self.fd.read(buf).await
+impl AsyncReader for NullAsyncReader {
+    async fn read_chunk(&mut self, _max: usize) -> Result<Vec<u8>, io::Error> {
+        Ok(Vec::new())
     }
 }
 
 /// The `ServerOsApi` trait represents an abstract interface to the features of an operating system that
 /// Zellij server requires.
 pub trait ServerOsApi: Send + Sync {
-    /// Sets the size of the terminal associated to file descriptor `fd`.
-    fn set_terminal_size_using_fd(&self, fd: RawFd, cols: u16, rows: u16);
-    /// Spawn a new terminal, with an optional file to open in a terminal program.
-    fn spawn_terminal(&self, file_to_open: Option<PathBuf>) -> (RawFd, Pid);
-    /// Read bytes from the standard output of the virtual terminal referred to by `fd`.
-    fn read_from_tty_stdout(&self, fd: RawFd, buf: &mut [u8]) -> Result<usize, nix::Error>;
-    /// Creates an `AsyncReader` that can be used to read from `fd` in an async context
-    fn async_file_reader(&self, fd: RawFd) -> Box<dyn AsyncReader>;
-    /// Write bytes to the standard input of the virtual terminal referred to by `fd`.
-    fn write_to_tty_stdin(&self, fd: RawFd, buf: &[u8]) -> Result<usize, nix::Error>;
-    /// Wait until all output written to the object referred to by `fd` has been transmitted.
-    fn tcdrain(&self, fd: RawFd) -> Result<(), nix::Error>;
-    /// Terminate the process with process ID `pid`.
-    fn kill(&self, pid: Pid) -> Result<(), nix::Error>;
+    fn set_terminal_size_using_terminal_id(
+        &self,
+        id: u32,
+        cols: u16,
+        rows: u16,
+        width_in_pixels: Option<u16>,
+        height_in_pixels: Option<u16>,
+    ) -> Result<()>;
+    /// Spawn a new terminal, with a terminal action. The returned tuple contains:
+    /// - terminal_id (u32)
+    /// - an async reader for the PTY output
+    /// - the child process PID, if available (Option<u32>)
+    fn spawn_terminal(
+        &self,
+        terminal_action: TerminalAction,
+        quit_cb: Box<dyn Fn(PaneId, Option<i32>, RunCommand) + Send>,
+        default_editor: Option<PathBuf>,
+        pane_env: &PaneEnv,
+    ) -> Result<(u32, Box<dyn AsyncReader>, Option<u32>)>;
+    // reserves a terminal id without actually opening a terminal
+    fn reserve_terminal_id(&self) -> Result<u32> {
+        unimplemented!()
+    }
+    /// Write bytes to the standard input of the virtual terminal referred to by `terminal_id`.
+    fn write_to_tty_stdin(&self, terminal_id: u32, buf: &[u8]) -> Result<usize>;
+    /// Wait until all output written to the terminal has been transmitted.
+    fn tcdrain(&self, terminal_id: u32) -> Result<()>;
+    /// Terminate the process with process ID `pid`. (SIGHUP)
+    fn kill(&self, pid: u32) -> Result<()>;
+    /// Terminate the process with process ID `pid`. (SIGKILL)
+    fn force_kill(&self, pid: u32) -> Result<()>;
+    /// Send SIGINT to the process with process ID `pid`
+    fn send_sigint(&self, pid: u32) -> Result<()>;
     /// Returns a [`Box`] pointer to this [`ServerOsApi`] struct.
     fn box_clone(&self) -> Box<dyn ServerOsApi>;
-    /// Receives a message on server-side IPC channel
-    fn recv_from_client(&self) -> (ClientToServerMsg, ErrorContext);
-    /// Sends a message to client
-    fn send_to_client(&self, msg: ServerToClientMsg);
-    /// Adds a sender to client
-    fn add_client_sender(&self);
-    /// Send to the temporary client
-    // A temporary client is the one that hasn't been registered as a client yet.
-    // Only the corresponding router thread has access to send messages to it.
-    // This can be the case when the client cannot attach to the session,
-    // so it tries to connect and then exits, hence temporary.
-    fn send_to_temp_client(&self, msg: ServerToClientMsg);
-    /// Removes the sender to client
-    fn remove_client_sender(&self);
-    /// Update the receiver socket for the client
-    fn update_receiver(&mut self, stream: LocalSocketStream);
+    fn send_to_client(&self, client_id: ClientId, msg: ServerToClientMsg) -> Result<()>;
+    fn register_client(
+        &mut self,
+        client_id: ClientId,
+        receiver: &IpcReceiverWithContext<ClientToServerMsg>,
+    ) -> Result<()>;
+    fn register_client_with_reply(
+        &mut self,
+        client_id: ClientId,
+        reply_stream: LocalSocketStream,
+    ) -> Result<()>;
+    fn remove_client(&mut self, client_id: ClientId) -> Result<()>;
     fn load_palette(&self) -> Palette;
+    /// Returns the current working directory for a given pid
+    fn get_cwd(&self, pid: u32) -> Option<PathBuf>;
+    /// Returns the current working directory for multiple pids
+    fn get_cwds(&self, _pids: Vec<u32>) -> (HashMap<u32, PathBuf>, HashMap<u32, Vec<String>>) {
+        (HashMap::new(), HashMap::new())
+    }
+    /// Get a list of all running commands by their parent process id
+    fn get_all_cmds_by_ppid(&self, _post_hook: &Option<String>) -> HashMap<String, Vec<String>> {
+        HashMap::new()
+    }
+    /// For each `(terminal_id, shell_pid)` pane, return the foreground command running in its
+    /// controlling terminal, keyed by `terminal_id`.
+    fn get_foreground_cmds(
+        &self,
+        _panes: &[(u32, u32)],
+        _post_hook: &Option<String>,
+    ) -> HashMap<u32, Vec<String>> {
+        HashMap::new()
+    }
+    /// Writes the given buffer to a string
+    fn write_to_file(&mut self, buf: String, file: Option<String>) -> Result<()>;
+
+    fn re_run_command_in_terminal(
+        &self,
+        terminal_id: u32,
+        run_command: RunCommand,
+        quit_cb: Box<dyn Fn(PaneId, Option<i32>, RunCommand) + Send>,
+        pane_env: &PaneEnv,
+    ) -> Result<(Box<dyn AsyncReader>, Option<u32>)>;
+    fn clear_terminal_id(&self, terminal_id: u32) -> Result<()>;
+    fn cache_resizes(&mut self) {}
+    fn apply_cached_resizes(&mut self) {}
 }
 
 impl ServerOsApi for ServerOsInputOutput {
-    fn set_terminal_size_using_fd(&self, fd: RawFd, cols: u16, rows: u16) {
-        set_terminal_size_using_fd(fd, cols, rows);
+    fn set_terminal_size_using_terminal_id(
+        &self,
+        id: u32,
+        cols: u16,
+        rows: u16,
+        width_in_pixels: Option<u16>,
+        height_in_pixels: Option<u16>,
+    ) -> Result<()> {
+        if let Some(cached_resizes) = self.cached_resizes.lock().unwrap().as_mut() {
+            cached_resizes.insert(id, (cols, rows, width_in_pixels, height_in_pixels));
+            return Ok(());
+        }
+        self.pty_backend
+            .set_terminal_size(id, cols, rows, width_in_pixels, height_in_pixels)
     }
-    fn spawn_terminal(&self, file_to_open: Option<PathBuf>) -> (RawFd, Pid) {
-        let orig_termios = self.orig_termios.lock().unwrap();
-        spawn_terminal(file_to_open, orig_termios.clone())
+    fn spawn_terminal(
+        &self,
+        terminal_action: TerminalAction,
+        quit_cb: Box<dyn Fn(PaneId, Option<i32>, RunCommand) + Send>,
+        default_editor: Option<PathBuf>,
+        pane_env: &PaneEnv,
+    ) -> Result<(u32, Box<dyn AsyncReader>, Option<u32>)> {
+        let err_context = || "failed to spawn terminal".to_string();
+
+        let terminal_id = self
+            .pty_backend
+            .next_terminal_id()
+            .context("no more terminal IDs left to allocate")?;
+
+        self.pty_backend.reserve_terminal_id(terminal_id);
+
+        let (cmd, failover_cmd) = build_command(terminal_action, default_editor, pane_env);
+
+        let (async_reader, child_fd) = self
+            .pty_backend
+            .spawn_terminal(cmd, failover_cmd, quit_cb, terminal_id, pane_env)
+            .with_context(err_context)?;
+
+        Ok((terminal_id, async_reader, Some(child_fd as u32)))
     }
-    fn read_from_tty_stdout(&self, fd: RawFd, buf: &mut [u8]) -> Result<usize, nix::Error> {
-        unistd::read(fd, buf)
+    fn reserve_terminal_id(&self) -> Result<u32> {
+        let terminal_id = self
+            .pty_backend
+            .next_terminal_id()
+            .context("no more terminal IDs available")?;
+        self.pty_backend.reserve_terminal_id(terminal_id);
+        Ok(terminal_id)
     }
-    fn async_file_reader(&self, fd: RawFd) -> Box<dyn AsyncReader> {
-        Box::new(RawFdAsyncReader::new(fd))
+    fn write_to_tty_stdin(&self, terminal_id: u32, buf: &[u8]) -> Result<usize> {
+        self.pty_backend.write_to_tty_stdin(terminal_id, buf)
     }
-    fn write_to_tty_stdin(&self, fd: RawFd, buf: &[u8]) -> Result<usize, nix::Error> {
-        unistd::write(fd, buf)
-    }
-    fn tcdrain(&self, fd: RawFd) -> Result<(), nix::Error> {
-        termios::tcdrain(fd)
+    fn tcdrain(&self, terminal_id: u32) -> Result<()> {
+        self.pty_backend.tcdrain(terminal_id)
     }
     fn box_clone(&self) -> Box<dyn ServerOsApi> {
         Box::new((*self).clone())
     }
-    fn kill(&self, pid: Pid) -> Result<(), nix::Error> {
-        // TODO:
-        // Ideally, we should be using SIGINT rather than SIGKILL here, but there are cases in which
-        // the terminal we're trying to kill hangs on SIGINT and so all the app gets stuck
-        // that's why we're sending SIGKILL here
-        // A better solution would be to send SIGINT here and not wait for it, and then have
-        // a background thread do the waitpid stuff and send SIGKILL if the process is stuck
-        kill(pid, Some(Signal::SIGKILL)).unwrap();
-        waitpid(pid, None).unwrap();
-        Ok(())
+    fn kill(&self, pid: u32) -> Result<()> {
+        self.pty_backend.kill(pid)
     }
-    fn recv_from_client(&self) -> (ClientToServerMsg, ErrorContext) {
-        self.receive_instructions_from_client
-            .as_ref()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .recv()
+    fn force_kill(&self, pid: u32) -> Result<()> {
+        self.pty_backend.force_kill(pid)
     }
-    fn send_to_client(&self, msg: ServerToClientMsg) {
-        self.send_instructions_to_client
-            .lock()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .send(msg);
+    fn send_sigint(&self, pid: u32) -> Result<()> {
+        self.pty_backend.send_sigint(pid)
     }
-    fn add_client_sender(&self) {
-        let sender = self
-            .receive_instructions_from_client
-            .as_ref()
-            .unwrap()
+    fn send_to_client(&self, client_id: ClientId, msg: ServerToClientMsg) -> Result<()> {
+        let err_context = || format!("failed to send message to client {client_id}");
+
+        if let Some(sender) = self
+            .client_senders
             .lock()
-            .unwrap()
-            .get_sender();
-        let old_sender = self
-            .send_instructions_to_client
-            .lock()
-            .unwrap()
-            .replace(sender);
-        if let Some(mut sender) = old_sender {
-            sender.send(ServerToClientMsg::Exit(ExitReason::ForceDetached));
+            .to_anyhow()
+            .with_context(err_context)?
+            .get_mut(&client_id)
+        {
+            sender.send_or_buffer(msg).with_context(err_context)
+        } else {
+            Ok(())
         }
     }
-    fn send_to_temp_client(&self, msg: ServerToClientMsg) {
-        self.receive_instructions_from_client
-            .as_ref()
-            .unwrap()
+
+    fn register_client(
+        &mut self,
+        client_id: ClientId,
+        receiver: &IpcReceiverWithContext<ClientToServerMsg>,
+    ) -> Result<()> {
+        let sender = ClientSender::new(client_id, receiver.get_sender());
+        self.client_senders
             .lock()
-            .unwrap()
-            .get_sender()
-            .send(msg);
+            .to_anyhow()
+            .with_context(|| format!("failed to create new client {client_id}"))?
+            .insert(client_id, sender);
+        Ok(())
     }
-    fn remove_client_sender(&self) {
-        assert!(self.send_instructions_to_client.lock().unwrap().is_some());
-        *self.send_instructions_to_client.lock().unwrap() = None;
+
+    fn register_client_with_reply(
+        &mut self,
+        client_id: ClientId,
+        reply_stream: LocalSocketStream,
+    ) -> Result<()> {
+        let sender = ClientSender::new(client_id, IpcSenderWithContext::new(reply_stream));
+        self.client_senders
+            .lock()
+            .to_anyhow()
+            .with_context(|| format!("failed to create new client {client_id}"))?
+            .insert(client_id, sender);
+        Ok(())
     }
-    fn update_receiver(&mut self, stream: LocalSocketStream) {
-        self.receive_instructions_from_client =
-            Some(Arc::new(Mutex::new(IpcReceiverWithContext::new(stream))));
+
+    fn remove_client(&mut self, client_id: ClientId) -> Result<()> {
+        let mut client_senders = self
+            .client_senders
+            .lock()
+            .to_anyhow()
+            .with_context(|| format!("failed to remove client {client_id}"))?;
+        if client_senders.contains_key(&client_id) {
+            client_senders.remove(&client_id);
+        }
+        Ok(())
     }
+
     fn load_palette(&self) -> Palette {
         default_palette()
+    }
+
+    fn get_cwd(&self, pid: u32) -> Option<PathBuf> {
+        let mut system_info = System::new();
+        let sysinfo_pid = sysinfo::Pid::from_u32(pid);
+        let refresh_kind = ProcessRefreshKind::nothing().with_cwd(UpdateKind::Always);
+        system_info.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[sysinfo_pid]),
+            false,
+            refresh_kind,
+        );
+
+        if let Some(process) = system_info.process(sysinfo_pid) {
+            if let Some(cwd) = process.cwd() {
+                return Some(cwd.to_path_buf());
+            }
+        }
+        None
+    }
+
+    fn get_cwds(&self, pids: Vec<u32>) -> (HashMap<u32, PathBuf>, HashMap<u32, Vec<String>>) {
+        let mut system_info = System::new();
+        let mut cwds = HashMap::new();
+        let mut cmds = HashMap::new();
+
+        let sysinfo_pids: Vec<sysinfo::Pid> =
+            pids.iter().map(|&p| sysinfo::Pid::from_u32(p)).collect();
+        let refresh_kind = ProcessRefreshKind::nothing()
+            .with_cwd(UpdateKind::Always)
+            .with_cmd(UpdateKind::Always);
+        system_info.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&sysinfo_pids),
+            false,
+            refresh_kind,
+        );
+
+        for pid in pids {
+            let sysinfo_pid = sysinfo::Pid::from_u32(pid);
+            if let Some(process) = system_info.process(sysinfo_pid) {
+                if let Some(cwd) = process.cwd() {
+                    cwds.insert(pid, cwd.to_path_buf());
+                }
+                let cmd = process.cmd();
+                if !cmd.is_empty() {
+                    cmds.insert(
+                        pid,
+                        cmd.iter()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .collect(),
+                    );
+                }
+            }
+        }
+
+        (cwds, cmds)
+    }
+    #[cfg(not(unix))]
+    fn get_all_cmds_by_ppid(&self, post_hook: &Option<String>) -> HashMap<String, Vec<String>> {
+        let mut system_info = System::new();
+        let refresh_kind = ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always);
+        system_info.refresh_processes_specifics(ProcessesToUpdate::All, true, refresh_kind);
+        let mut cmds = HashMap::new();
+        for (_pid, process) in system_info.processes() {
+            if let Some(parent_pid) = process.parent() {
+                let ppid_str = format!("{}", parent_pid);
+                let command: Vec<String> = process
+                    .cmd()
+                    .iter()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .collect();
+                if command.is_empty() {
+                    continue;
+                }
+                cmds.insert(ppid_str, apply_post_command_hook(command, post_hook));
+            }
+        }
+        cmds
+    }
+
+    #[cfg(unix)]
+    fn get_foreground_cmds(
+        &self,
+        panes: &[(u32, u32)],
+        post_hook: &Option<String>,
+    ) -> HashMap<u32, Vec<String>> {
+        let mut terminal_to_fg_pid: HashMap<u32, u32> = HashMap::new();
+        for &(terminal_id, shell_pid) in panes {
+            if let Some(fpgid) = self.pty_backend.tcgetpgrp(terminal_id) {
+                if fpgid > 0 && fpgid as u32 != shell_pid {
+                    terminal_to_fg_pid.insert(terminal_id, fpgid as u32);
+                }
+            }
+        }
+        if terminal_to_fg_pid.is_empty() {
+            return HashMap::new();
+        }
+
+        let sysinfo_pids: Vec<sysinfo::Pid> = terminal_to_fg_pid
+            .values()
+            .map(|&p| sysinfo::Pid::from_u32(p))
+            .collect();
+        let mut system_info = System::new();
+        let refresh_kind = ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always);
+        system_info.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&sysinfo_pids),
+            false,
+            refresh_kind,
+        );
+
+        let mut cmds = HashMap::new();
+        for (terminal_id, fg_pid) in terminal_to_fg_pid {
+            let Some(process) = system_info.process(sysinfo::Pid::from_u32(fg_pid)) else {
+                continue;
+            };
+            let command: Vec<String> = process
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().into_owned())
+                .collect();
+            if command.is_empty() {
+                continue;
+            }
+            let command = apply_post_command_hook(command, post_hook);
+            cmds.insert(terminal_id, command);
+        }
+        cmds
+    }
+
+    #[cfg(not(unix))]
+    fn get_foreground_cmds(
+        &self,
+        panes: &[(u32, u32)],
+        post_hook: &Option<String>,
+    ) -> HashMap<u32, Vec<String>> {
+        // Use ppid-based discovery on Windows, because it has no controlling-terminal
+        // foreground group.
+        let ppids_to_cmds = self.get_all_cmds_by_ppid(post_hook);
+        let mut cmds = HashMap::new();
+        for &(terminal_id, shell_pid) in panes {
+            if let Some(cmd) = ppids_to_cmds.get(&shell_pid.to_string()) {
+                cmds.insert(terminal_id, cmd.clone());
+            }
+        }
+        cmds
+    }
+
+    fn write_to_file(&mut self, buf: String, name: Option<String>) -> Result<()> {
+        let err_context = || "failed to write to file".to_string();
+
+        let mut f: File = match name {
+            Some(x) => File::create(x).with_context(err_context)?,
+            None => tempfile().with_context(err_context)?,
+        };
+        write!(f, "{}", buf).with_context(err_context)
+    }
+
+    fn re_run_command_in_terminal(
+        &self,
+        terminal_id: u32,
+        run_command: RunCommand,
+        quit_cb: Box<dyn Fn(PaneId, Option<i32>, RunCommand) + Send>,
+        pane_env: &PaneEnv,
+    ) -> Result<(Box<dyn AsyncReader>, Option<u32>)> {
+        let (async_reader, child_fd) =
+            self.pty_backend
+                .spawn_terminal(run_command, None, quit_cb, terminal_id, pane_env)?;
+        Ok((async_reader, Some(child_fd as u32)))
+    }
+    fn clear_terminal_id(&self, terminal_id: u32) -> Result<()> {
+        self.pty_backend.clear_terminal_id(terminal_id);
+        Ok(())
+    }
+    fn cache_resizes(&mut self) {
+        if self.cached_resizes.lock().unwrap().is_none() {
+            *self.cached_resizes.lock().unwrap() = Some(BTreeMap::new());
+        }
+    }
+    fn apply_cached_resizes(&mut self) {
+        let mut cached_resizes = self.cached_resizes.lock().unwrap().take();
+        if let Some(cached_resizes) = cached_resizes.as_mut() {
+            for (terminal_id, (cols, rows, width_in_pixels, height_in_pixels)) in
+                cached_resizes.iter()
+            {
+                let _ = self.set_terminal_size_using_terminal_id(
+                    *terminal_id,
+                    *cols,
+                    *rows,
+                    width_in_pixels.clone(),
+                    height_in_pixels.clone(),
+                );
+            }
+        }
     }
 }
 
@@ -306,12 +771,93 @@ impl Clone for Box<dyn ServerOsApi> {
     }
 }
 
-pub fn get_server_os_input() -> Result<ServerOsInputOutput, nix::Error> {
-    let current_termios = termios::tcgetattr(0)?;
-    let orig_termios = Arc::new(Mutex::new(current_termios));
+pub fn get_server_os_input() -> Result<ServerOsInputOutput, std::io::Error> {
     Ok(ServerOsInputOutput {
-        orig_termios,
-        receive_instructions_from_client: None,
-        send_instructions_to_client: Arc::new(Mutex::new(None)),
+        pty_backend: PtyBackendImpl::new()?,
+        client_senders: Arc::new(Mutex::new(HashMap::new())),
+        cached_resizes: Arc::new(Mutex::new(None)),
     })
 }
+
+use crate::pty_writer::PtyWriteInstruction;
+use crate::thread_bus::ThreadSenders;
+
+pub struct ResizeCache {
+    senders: ThreadSenders,
+}
+
+impl ResizeCache {
+    pub fn new(senders: ThreadSenders) -> Self {
+        senders
+            .send_to_pty_writer(PtyWriteInstruction::StartCachingResizes)
+            .unwrap_or_else(|e| {
+                log::error!("Failed to cache resizes: {}", e);
+            });
+        ResizeCache { senders }
+    }
+}
+
+impl Drop for ResizeCache {
+    fn drop(&mut self) {
+        self.senders
+            .send_to_pty_writer(PtyWriteInstruction::ApplyCachedResizes)
+            .unwrap_or_else(|e| {
+                log::error!("Failed to apply cached resizes: {}", e);
+            });
+    }
+}
+
+fn apply_post_command_hook(command: Vec<String>, post_hook: &Option<String>) -> Vec<String> {
+    let Some(post_hook) = post_hook else {
+        return command;
+    };
+    let stringified = command.join(" ");
+    let cmd = match run_command_hook(&stringified, post_hook) {
+        Ok(command) => command,
+        Err(e) => {
+            Err::<(), _>(anyhow!("post command discovery hook failed to run: {e}")).non_fatal();
+            stringified
+        },
+    };
+    cmd.trim()
+        .split_ascii_whitespace()
+        .map(|p| p.to_owned())
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn run_command_hook(
+    original_command: &str,
+    hook_script: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(hook_script)
+        .env("RESURRECT_COMMAND", original_command)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!("Hook failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+}
+
+#[cfg(windows)]
+fn run_command_hook(
+    original_command: &str,
+    hook_script: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("cmd")
+        .arg("/C")
+        .arg(hook_script)
+        .env("RESURRECT_COMMAND", original_command)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("Hook failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+}
+
+#[cfg(test)]
+#[path = "./unit/os_input_output_tests.rs"]
+mod os_input_output_tests;

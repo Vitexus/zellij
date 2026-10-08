@@ -1,0 +1,37 @@
+---
+source: zellij-utils/src/kdl/mod.rs
+assertion_line: 9116
+expression: fake_config_stringified
+---
+plugins {
+    about location="zellij:about"
+    compact-bar location="zellij:bars" {
+        role "compact-bar"
+    }
+    configuration location="zellij:configuration"
+    context-menu location="zellij:context-menu"
+    filepicker location="zellij:strider" {
+        cwd "/"
+    }
+    plugin-manager location="zellij:plugin-manager"
+    prompt location="zellij:prompt"
+    session-manager location="zellij:session-manager"
+    status-bar location="zellij:bars" {
+        role "status-bar"
+    }
+    strider location="zellij:strider"
+    tab-bar location="zellij:bars" {
+        role "tab-bar"
+    }
+    welcome-screen location="zellij:session-manager" {
+        welcome_screen true
+    }
+}
+load_plugins {
+    zellij:bars {
+        role "link"
+    }
+}
+web_client {
+    font "monospace"
+}

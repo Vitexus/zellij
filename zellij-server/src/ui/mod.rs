@@ -1,3 +1,7 @@
+pub mod border_glyphs;
 pub mod boundaries;
-pub mod pane_resizer;
-pub mod pane_resizer_beta;
+pub mod components;
+pub mod hint_text;
+pub mod loading_indication;
+pub mod pane_boundaries_frame;
+pub mod pane_contents_and_ui;

@@ -6,16 +6,19 @@ services:
     container_name: zellij-e2e
     hostname: zellij-e2e
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Vienna
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=test
-      - USER_NAME=test
+      PUID: 1000
+      PGID: 1000
+      TZ: Europe/Vienna
+      PASSWORD_ACCESS: true
+      USER_PASSWORD: test
+      USER_NAME: test
     volumes:
       - type: bind
         source: ./target
         target: /usr/src/zellij
+      - type: bind
+        source: ./src/tests/fixtures
+        target: /usr/src/zellij/fixtures
     ports:
-      - 2222:2222
+      - "127.0.0.1:2222:2222/tcp"
     restart: unless-stopped

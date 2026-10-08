@@ -1,0 +1,640 @@
+use std::ops::Bound;
+use std::ops::RangeBounds;
+use zellij_utils::data::StyledText;
+
+#[derive(Debug, Default, Clone)]
+pub struct Text {
+    text: String,
+    selected: bool,
+    opaque: bool,
+    disabled: bool,
+    indices: Vec<Vec<usize>>,
+}
+
+impl From<StyledText> for Text {
+    fn from(styled_text: StyledText) -> Self {
+        Text {
+            text: styled_text.text,
+            indices: styled_text.indices,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&String> for Text {
+    fn from(content: &String) -> Self {
+        Text::from(content.clone())
+    }
+}
+
+impl From<Text> for StyledText {
+    fn from(text: Text) -> Self {
+        StyledText {
+            text: text.text,
+            indices: text.indices,
+        }
+    }
+}
+
+impl From<String> for Text {
+    fn from(value: String) -> Self {
+        Text {
+            text: value,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&str> for Text {
+    fn from(value: &str) -> Self {
+        Text::from(value.to_owned())
+    }
+}
+
+impl Text {
+    pub fn selected(mut self) -> Self {
+        self.selected = true;
+        self
+    }
+    pub fn opaque(mut self) -> Self {
+        self.opaque = true;
+        self
+    }
+    pub fn disabled(mut self) -> Self {
+        self.disabled = true;
+        self
+    }
+    pub fn dim_indices(mut self, mut indices: Vec<usize>) -> Self {
+        const DIM_LEVEL: usize = 4;
+        self.pad_indices(DIM_LEVEL);
+        self.indices
+            .get_mut(DIM_LEVEL)
+            .map(|i| i.append(&mut indices));
+        self
+    }
+    pub fn dim_range<R: RangeBounds<usize>>(mut self, indices: R) -> Self {
+        const DIM_LEVEL: usize = 4;
+        self.pad_indices(DIM_LEVEL);
+        let start = match indices.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(s) => *s,
+            Bound::Excluded(s) => *s,
+        };
+        let end = match indices.end_bound() {
+            Bound::Unbounded => self.text.chars().count(),
+            Bound::Included(s) => *s + 1,
+            Bound::Excluded(s) => *s,
+        };
+        let indices = start..end;
+        self.indices
+            .get_mut(DIM_LEVEL)
+            .map(|i| i.append(&mut indices.into_iter().collect()));
+        self
+    }
+    pub fn dim_substring<S: AsRef<str>>(mut self, substr: S) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            let abs_pos = start + pos;
+            self = self.dim_range(abs_pos..abs_pos + substr.chars().count());
+            start = abs_pos + substr.len();
+        }
+
+        self
+    }
+    pub fn dim_all(self) -> Self {
+        const DIM_LEVEL: usize = 4;
+        self.color_range(DIM_LEVEL, ..)
+    }
+    pub fn unbold_indices(mut self, mut indices: Vec<usize>) -> Self {
+        const UNBOLD_LEVEL: usize = 5;
+        self.pad_indices(UNBOLD_LEVEL);
+        self.indices
+            .get_mut(UNBOLD_LEVEL)
+            .map(|i| i.append(&mut indices));
+        self
+    }
+    pub fn unbold_range<R: RangeBounds<usize>>(mut self, indices: R) -> Self {
+        const UNBOLD_LEVEL: usize = 5;
+        self.pad_indices(UNBOLD_LEVEL);
+        let start = match indices.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(s) => *s,
+            Bound::Excluded(s) => *s,
+        };
+        let end = match indices.end_bound() {
+            Bound::Unbounded => self.text.chars().count(),
+            Bound::Included(s) => *s + 1,
+            Bound::Excluded(s) => *s,
+        };
+        let indices = start..end;
+        self.indices
+            .get_mut(UNBOLD_LEVEL)
+            .map(|i| i.append(&mut indices.into_iter().collect()));
+        self
+    }
+    pub fn unbold_substring<S: AsRef<str>>(mut self, substr: S) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            let abs_pos = start + pos;
+            self = self.unbold_range(abs_pos..abs_pos + substr.chars().count());
+            start = abs_pos + substr.len();
+        }
+
+        self
+    }
+    pub fn unbold_all(self) -> Self {
+        const UNBOLD_LEVEL: usize = 5;
+        self.color_range(UNBOLD_LEVEL, ..)
+    }
+    pub fn error_color_indices(mut self, mut indices: Vec<usize>) -> Self {
+        const ERROR_COLOR_LEVEL: usize = 6;
+        self.pad_indices(ERROR_COLOR_LEVEL);
+        self.indices
+            .get_mut(ERROR_COLOR_LEVEL)
+            .map(|i| i.append(&mut indices));
+        self
+    }
+    pub fn error_color_range<R: RangeBounds<usize>>(mut self, indices: R) -> Self {
+        const ERROR_COLOR_LEVEL: usize = 6;
+        self.pad_indices(ERROR_COLOR_LEVEL);
+        let start = match indices.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(s) => *s,
+            Bound::Excluded(s) => *s,
+        };
+        let end = match indices.end_bound() {
+            Bound::Unbounded => self.text.chars().count(),
+            Bound::Included(s) => *s + 1,
+            Bound::Excluded(s) => *s,
+        };
+        let indices = start..end;
+        self.indices
+            .get_mut(ERROR_COLOR_LEVEL)
+            .map(|i| i.append(&mut indices.into_iter().collect()));
+        self
+    }
+    pub fn error_color_substring<S: AsRef<str>>(mut self, substr: S) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            let abs_pos = start + pos;
+            self = self.error_color_range(abs_pos..abs_pos + substr.chars().count());
+            start = abs_pos + substr.len();
+        }
+
+        self
+    }
+    pub fn error_color_nth_substring<S: AsRef<str>>(
+        self,
+        substr: S,
+        occurrence_index: usize,
+    ) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+        let mut count = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            if count == occurrence_index {
+                let abs_pos = start + pos;
+                return self.error_color_range(abs_pos..abs_pos + substr.len());
+            }
+            count += 1;
+            start = start + pos + substr.len();
+        }
+
+        self
+    }
+
+    pub fn error_color_last_substring<S: AsRef<str>>(self, substr: S) -> Self {
+        let substr = substr.as_ref();
+
+        if let Some(pos) = self.text.rfind(substr) {
+            return self.error_color_range(pos..pos + substr.len());
+        }
+        self
+    }
+
+    pub fn error_color_all(self) -> Self {
+        self.error_color_range(..)
+    }
+    pub fn success_color_indices(mut self, mut indices: Vec<usize>) -> Self {
+        const SUCCESS_COLOR_LEVEL: usize = 7;
+        self.pad_indices(SUCCESS_COLOR_LEVEL);
+        self.indices
+            .get_mut(SUCCESS_COLOR_LEVEL)
+            .map(|i| i.append(&mut indices));
+        self
+    }
+    pub fn success_color_range<R: RangeBounds<usize>>(mut self, indices: R) -> Self {
+        const SUCCESS_COLOR_LEVEL: usize = 7;
+        self.pad_indices(SUCCESS_COLOR_LEVEL);
+        let start = match indices.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(s) => *s,
+            Bound::Excluded(s) => *s,
+        };
+        let end = match indices.end_bound() {
+            Bound::Unbounded => self.text.chars().count(),
+            Bound::Included(s) => *s + 1,
+            Bound::Excluded(s) => *s,
+        };
+        let indices = start..end;
+        self.indices
+            .get_mut(SUCCESS_COLOR_LEVEL)
+            .map(|i| i.append(&mut indices.into_iter().collect()));
+        self
+    }
+    pub fn success_color_substring<S: AsRef<str>>(mut self, substr: S) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            let abs_pos = start + pos;
+            self = self.success_color_range(abs_pos..abs_pos + substr.chars().count());
+            start = abs_pos + substr.len();
+        }
+
+        self
+    }
+    pub fn success_color_nth_substring<S: AsRef<str>>(
+        self,
+        substr: S,
+        occurrence_index: usize,
+    ) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+        let mut count = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            if count == occurrence_index {
+                let abs_pos = start + pos;
+                return self.success_color_range(abs_pos..abs_pos + substr.len());
+            }
+            count += 1;
+            start = start + pos + substr.len();
+        }
+
+        self
+    }
+
+    pub fn success_color_last_substring<S: AsRef<str>>(self, substr: S) -> Self {
+        let substr = substr.as_ref();
+
+        if let Some(pos) = self.text.rfind(substr) {
+            return self.success_color_range(pos..pos + substr.len());
+        }
+        self
+    }
+
+    pub fn success_color_all(self) -> Self {
+        self.success_color_range(..)
+    }
+    pub fn color_indices(mut self, index_level: usize, mut indices: Vec<usize>) -> Self {
+        self.pad_indices(index_level);
+        self.indices
+            .get_mut(index_level)
+            .map(|i| i.append(&mut indices));
+        self
+    }
+    pub fn color_range<R: RangeBounds<usize>>(mut self, index_level: usize, indices: R) -> Self {
+        self.pad_indices(index_level);
+        let start = match indices.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(s) => *s,
+            Bound::Excluded(s) => *s,
+        };
+        let end = match indices.end_bound() {
+            Bound::Unbounded => self.text.chars().count(),
+            Bound::Included(s) => *s + 1,
+            Bound::Excluded(s) => *s,
+        };
+        let indices = start..end;
+        self.indices
+            .get_mut(index_level)
+            .map(|i| i.append(&mut indices.into_iter().collect()));
+        self
+    }
+
+    pub fn color_substring<S: AsRef<str>>(mut self, index_level: usize, substr: S) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+        while let Some(pos) = self.text[start..].find(substr) {
+            let abs_pos = start + pos;
+            let char_start = self.text[..abs_pos].chars().count();
+            let char_end = char_start + substr.chars().count();
+            self = self.color_range(index_level, char_start..char_end);
+            start = abs_pos + substr.len();
+        }
+        self
+    }
+
+    pub fn color_all(self, index_level: usize) -> Self {
+        self.color_range(index_level, ..)
+    }
+
+    pub fn color_nth_substring<S: AsRef<str>>(
+        self,
+        index_level: usize,
+        substr: S,
+        occurrence_index: usize,
+    ) -> Self {
+        let substr = substr.as_ref();
+        let mut start = 0;
+        let mut count = 0;
+
+        while let Some(pos) = self.text[start..].find(substr) {
+            if count == occurrence_index {
+                let abs_pos = start + pos;
+                return self.color_range(index_level, abs_pos..abs_pos + substr.len());
+            }
+            count += 1;
+            start = start + pos + substr.len();
+        }
+
+        self
+    }
+
+    pub fn color_last_substring<S: AsRef<str>>(self, index_level: usize, substr: S) -> Self {
+        let substr = substr.as_ref();
+
+        if let Some(pos) = self.text.rfind(substr) {
+            return self.color_range(index_level, pos..pos + substr.len());
+        }
+        self
+    }
+
+    pub fn content(&self) -> &str {
+        &self.text
+    }
+    pub fn width(&self) -> usize {
+        unicode_width::UnicodeWidthStr::width(self.text.as_str())
+    }
+    pub fn is_plain(&self) -> bool {
+        self.indices.iter().all(|level| level.is_empty())
+    }
+    pub fn wrap(&self, width: usize) -> Vec<Text> {
+        let width = width.max(1);
+        let chars: Vec<char> = self.text.chars().collect();
+        let char_width =
+            |character: char| unicode_width::UnicodeWidthChar::width(character).unwrap_or(0);
+        let mut lines: Vec<Vec<Option<usize>>> = vec![];
+        let mut line: Vec<Option<usize>> = vec![];
+        let mut line_width = 0;
+        let mut position = 0;
+        while position <= chars.len() {
+            if position == chars.len() || chars[position] == '\n' {
+                lines.push(std::mem::take(&mut line));
+                line_width = 0;
+                position += 1;
+                continue;
+            }
+            if chars[position].is_whitespace() {
+                position += 1;
+                continue;
+            }
+            let word_end = (position..chars.len())
+                .find(|index| chars[*index].is_whitespace())
+                .unwrap_or(chars.len());
+            let mut word: Vec<usize> = (position..word_end).collect();
+            position = word_end;
+            loop {
+                let word_width: usize = word.iter().map(|index| char_width(chars[*index])).sum();
+                let separator = if line.is_empty() { 0 } else { 1 };
+                if line_width + separator + word_width <= width {
+                    if separator == 1 {
+                        line.push(None);
+                    }
+                    line.extend(word.iter().map(|index| Some(*index)));
+                    line_width += separator + word_width;
+                    break;
+                }
+                if !line.is_empty() {
+                    lines.push(std::mem::take(&mut line));
+                    line_width = 0;
+                    continue;
+                }
+                let mut taken = 0;
+                let mut split_at = 0;
+                for index in &word {
+                    let next = char_width(chars[*index]);
+                    if taken + next > width && split_at > 0 {
+                        break;
+                    }
+                    taken += next;
+                    split_at += 1;
+                }
+                let rest = word.split_off(split_at);
+                lines.push(word.into_iter().map(Some).collect());
+                word = rest;
+                if word.is_empty() {
+                    break;
+                }
+            }
+        }
+        while lines.len() > 1 && lines.last().map(|line| line.is_empty()).unwrap_or(false) {
+            lines.pop();
+        }
+        let levels_at = |original: usize| -> Vec<usize> {
+            self.indices
+                .iter()
+                .enumerate()
+                .filter(|(_, indices)| indices.contains(&original))
+                .map(|(level, _)| level)
+                .collect()
+        };
+        lines
+            .into_iter()
+            .map(|line| {
+                let mut content = String::new();
+                let mut indices: Vec<Vec<usize>> = vec![];
+                let mut mark = |levels: Vec<usize>, column: usize| {
+                    for level in levels {
+                        if indices.len() <= level {
+                            indices.resize(level + 1, vec![]);
+                        }
+                        indices[level].push(column);
+                    }
+                };
+                for (column, original) in line.iter().enumerate() {
+                    match original {
+                        Some(original) => {
+                            content.push(chars[*original]);
+                            mark(levels_at(*original), column);
+                        },
+                        None => {
+                            content.push(' ');
+                            let before = line[..column].iter().rev().find_map(|index| *index);
+                            let after = line[column + 1..].iter().find_map(|index| *index);
+                            if let (Some(before), Some(after)) = (before, after) {
+                                let after_levels = levels_at(after);
+                                let shared = levels_at(before)
+                                    .into_iter()
+                                    .filter(|level| after_levels.contains(level))
+                                    .collect();
+                                mark(shared, column);
+                            }
+                        },
+                    }
+                }
+                Text {
+                    text: content,
+                    selected: self.selected,
+                    opaque: self.opaque,
+                    disabled: self.disabled,
+                    indices,
+                }
+            })
+            .collect()
+    }
+    fn pad_indices(&mut self, index_level: usize) {
+        if self.indices.get(index_level).is_none() {
+            for _ in self.indices.len()..=index_level {
+                self.indices.push(vec![]);
+            }
+        }
+    }
+    pub fn serialize(&self) -> String {
+        let text = self
+            .text
+            .to_string()
+            .as_bytes()
+            .iter()
+            .map(|b| b.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut indices = String::new();
+        for index_variants in &self.indices {
+            indices.push_str(&format!(
+                "{}$",
+                index_variants
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
+
+        let mut prefix = "".to_owned();
+
+        if self.selected {
+            prefix.push('x');
+        }
+
+        if self.opaque {
+            prefix.push('z');
+        }
+
+        if self.disabled {
+            prefix.push('d');
+        }
+
+        format!("{}{}{}", prefix, indices, text)
+    }
+    pub fn len(&self) -> usize {
+        self.text.chars().count()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
+pub fn print_text(text: Text) {
+    print!("\u{1b}Pztext;{}\u{1b}\\", text.serialize())
+}
+
+pub fn print_text_with_coordinates(
+    text: Text,
+    x: usize,
+    y: usize,
+    width: Option<usize>,
+    height: Option<usize>,
+) {
+    let width = width.map(|w| w.to_string()).unwrap_or_default();
+    let height = height.map(|h| h.to_string()).unwrap_or_default();
+    print!(
+        "\u{1b}Pztext;{}/{}/{}/{};{}\u{1b}\\",
+        x,
+        y,
+        width,
+        height,
+        text.serialize()
+    )
+}
+
+pub fn serialize_text(text: &Text) -> String {
+    format!("\u{1b}Pztext;{}\u{1b}\\", text.serialize())
+}
+
+pub fn serialize_text_with_coordinates(
+    text: &Text,
+    x: usize,
+    y: usize,
+    width: Option<usize>,
+    height: Option<usize>,
+) -> String {
+    let width = width.map(|w| w.to_string()).unwrap_or_default();
+    let height = height.map(|h| h.to_string()).unwrap_or_default();
+    format!(
+        "\u{1b}Pztext;{}/{}/{}/{};{}\u{1b}\\",
+        x,
+        y,
+        width,
+        height,
+        text.serialize()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text_body(text: &str) -> String {
+        text.as_bytes()
+            .iter()
+            .map(|byte| byte.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    #[test]
+    fn from_str_equal_from_string() {
+        let from_str = Text::from("x").serialize();
+        let from_string = Text::from(String::from("x")).serialize();
+
+        assert_eq!(from_str, from_string);
+    }
+
+    #[test]
+    fn disabled_flag_serializes_with_a_d_prefix() {
+        let serialized = Text::from("x").disabled().serialize();
+        assert_eq!(serialized, format!("d{}", text_body("x")));
+    }
+
+    #[test]
+    fn opaque_and_disabled_serialize_in_push_order() {
+        let serialized = Text::from("x").disabled().opaque().serialize();
+        assert_eq!(serialized, format!("zd{}", text_body("x")));
+    }
+
+    #[test]
+    fn all_flags_serialize_in_selected_opaque_disabled_order() {
+        let serialized = Text::from("x").disabled().opaque().selected().serialize();
+        assert_eq!(serialized, format!("xzd{}", text_body("x")));
+    }
+
+    #[test]
+    fn flags_do_not_disturb_indices_or_text() {
+        let serialized = Text::from("Foo bar baz")
+            .disabled()
+            .color_indices(0, vec![0, 1, 2])
+            .serialize();
+        assert!(serialized.starts_with('d'));
+        assert!(serialized.contains("0,1,2$"));
+        assert!(serialized.ends_with(&text_body("Foo bar baz")));
+    }
+}

@@ -1,4 +1,0 @@
-[toolchain]
-channel = "beta"
-components = ["rustfmt", "clippy", "rust-analysis"]
-targets = ["wasm32-wasi"]

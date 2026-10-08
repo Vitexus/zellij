@@ -1,13 +1,16 @@
 [package]
 name = "zellij-tile"
-version = "0.14.0"
+version.workspace = true
 authors = ["Brooks J Rady <b.j.rady@gmail.com>"]
-edition = "2018"
+edition.workspace = true
 description = "A small client-side library for writing Zellij plugins"
-license = "MIT"
+license.workspace = true
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-strum = "0.20.0"
-strum_macros = "0.20.0"
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+unicode-width = { workspace = true }
+zellij-utils = { workspace = true }
