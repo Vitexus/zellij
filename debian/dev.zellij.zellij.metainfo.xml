@@ -14,11 +14,11 @@
     </p>
   </description>
   
+  <url type="homepage">https://zellij.dev/</url>
   <icon type="stock">zellij</icon>
   
   <categories>
     <category>Utility</category>
-    <category>Adult</category>
   </categories>
   
   <provides>

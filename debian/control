@@ -1,17 +1,32 @@
 Source: zellij
-Section: tools
+Section: utils
 Priority: optional
 Maintainer: CyberVitexus <info@vitexsoftware.cz>
-Build-Depends: debhelper (>=11~),rustc (>=1.40),cargo,dh-cargo, inkscape
-Standards-Version: 4.1.4
+Build-Depends:
+ debhelper-compat (= 13),
+ build-essential,
+ ca-certificates,
+ curl,
+ perl,
+ pkg-config,
+ cmake,
+ libssl-dev,
+ zlib1g-dev,
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
 Homepage: https://zellij.dev/
+Vcs-Git: https://github.com/Vitexus/zellij.git
+Vcs-Browser: https://github.com/Vitexus/zellij
 
 Package: zellij
 Architecture: any
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends}
-Description: A terminal workspace with batteries included
- Zellij is a terminal workspace. It has the base functionality 
- of a terminal multiplexer (similar to tmux or screen) but 
- includes many built-in features that would allow users to extend 
+Description: terminal workspace with batteries included
+ Zellij is a terminal workspace. It has the base functionality
+ of a terminal multiplexer (similar to tmux or screen) but
+ includes many built-in features that allow users to extend
  it and create their own personalized environment.
+ .
+ Includes a plugin system (WebAssembly), layouts, floating panes,
+ session resurrection and a built-in web client.

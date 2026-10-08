@@ -1,0 +1,4 @@
+target/release/zellij usr/bin
+assets/zellij.desktop usr/share/applications
+zellij.svg usr/share/icons/hicolor/scalable/apps
+debian/dev.zellij.zellij.metainfo.xml usr/share/metainfo

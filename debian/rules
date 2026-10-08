@@ -1,25 +1,32 @@
 #!/usr/bin/make -f
-# You must remove unused comment lines for the released package.
+# Zellij needs Rust 1.95 (rust-toolchain.toml) plus the wasm32-wasip1 target
+# to build its built-in plugins; neither is available in Debian forky, so the
+# toolchain is bootstrapped with rustup into a build-local directory.
 export DH_VERBOSE = 1
-#export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-#export DEB_CFLAGS_MAINT_APPEND  = -Wall -pedantic
-#export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
-
-#export PATH = "~/.cargo/bin/:${PATH}"
+export RUSTUP_HOME = $(CURDIR)/debian/.rustup
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+export PATH := $(CARGO_HOME)/bin:$(PATH)
 
 %:
 	dh $@
 
-override_dh_build:
-	cargo -v build
-	dh_build
+override_dh_auto_build:
+	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+	rustup toolchain install $$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml) --profile minimal -t wasm32-wasip1
+	cargo xtask build --release
+	mkdir -p debian/completions
+	for sh in bash zsh fish; do \
+	    target/release/zellij setup --generate-completion $$sh > debian/completions/zellij.$$sh; \
+	done
 
-override_dh_prep:
-	cargo  -v check
-	dh_prep
+override_dh_auto_test:
 
+override_dh_auto_install:
+	install -D -m 0644 debian/completions/zellij.bash debian/zellij/usr/share/bash-completion/completions/zellij
+	install -D -m 0644 debian/completions/zellij.zsh debian/zellij/usr/share/zsh/vendor-completions/_zellij
+	install -D -m 0644 debian/completions/zellij.fish debian/zellij/usr/share/fish/vendor_completions.d/zellij.fish
 
-override_dh_install:
-	dh_install
-	cargo  -v install --path .
-	debian/mkico.sh
+override_dh_dwz:
+
+override_dh_auto_clean:
+	rm -rf target debian/completions debian/.rustup debian/.cargo

@@ -4,3 +4,6 @@ target/
 .vim
 .idea
 .DS_Store
+debian/.rustup/
+debian/.cargo/
+debian/completions/

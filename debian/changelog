@@ -1,8 +1,8 @@
-zellij (1.13.0) UNRELEASED; urgency=low
+zellij (0.46.0) forky; urgency=medium
 
-  * Initial release. Closes: #nnnn
-    <nnnn is the bug number of your ITP>
-  * 
-  * repacked
+  * New upstream release 0.46.0.
+  * Modernise packaging: debhelper-compat 13, rustup-based toolchain
+    bootstrap (Rust 1.95 and wasm32-wasip1 are required), shell completions,
+    desktop file, AppStream metadata.
 
- -- CyberVitexus <vitex@exiv.jinonice.czf>  Sat, 26 Jun 2021 14:35:43 +0200
+ -- CyberVitexus <info@vitexsoftware.cz>  Thu, 08 Oct 2026 12:00:00 +0200
